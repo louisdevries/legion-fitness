@@ -1,16 +1,10 @@
 import 'package:flutter/material.dart';
 import '../models/programs.dart';
 import '../services/program_service.dart';
-import 'exercise_screen.dart';
-import '../models/exercise.dart'; // for mock exercises until you fetch real ones
+import 'week_day_selector_screen.dart';
 
 class ProgramsScreen extends StatelessWidget {
   const ProgramsScreen({super.key});
-
-  // TEMP: mock exercises for each program
-  List<Exercise> _getExercisesForProgram(Program program) {
-    return mockExercises;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,10 +31,7 @@ class ProgramsScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => ExercisesScreen(
-                      programName: program.name,
-                      exercises: _getExercisesForProgram(program),
-                    ),
+                    builder: (_) => WeekDaySelectorScreen(programId: program.id),
                   ),
                 );
               },
@@ -59,6 +50,11 @@ class ProgramsScreen extends StatelessWidget {
                         program.imageUrl,
                         height: 150,
                         fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          height: 150,
+                          color: Colors.grey.shade300,
+                          child: const Icon(Icons.image, size: 50),
+                        ),
                       ),
                     ),
                     Padding(

@@ -17,6 +17,7 @@ dependencies:
   google_sign_in: ^6.2.1
   flutter_lints: ^2.0.0
   supabase_flutter: ^2.12.0
+  audioplayers: ^6.5.1
 
   cupertino_icons: ^1.0.8
 
@@ -26,5 +27,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/sounds/tick.wav
+    - assets/sounds/ding.wav
 
 
