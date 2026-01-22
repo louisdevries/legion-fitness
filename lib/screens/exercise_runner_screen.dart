@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'rest_screen.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class ExerciseRunnerScreen extends StatefulWidget {
   final List<Map<String, dynamic>> exercises;
@@ -27,13 +27,33 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
   int remainingSeconds = 0;
   int totalSeconds = 1;
   bool isPaused = false;
+  bool isResting = false;
+  bool mediaReady = false;
 
   late final AudioPlayer tickPlayer;
   late final AudioPlayer dingPlayer;
-
-  late AnimationController pulseController;
+  late final AnimationController pulseController;
 
   Map<String, dynamic> get currentExercise => widget.exercises[currentIndex];
+
+  @override
+  void initState() {
+    super.initState();
+
+    tickPlayer = AudioPlayer();
+    dingPlayer = AudioPlayer();
+
+    pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+      lowerBound: 0.95,
+      upperBound: 1.05,
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      startCurrentExercise();
+    });
+  }
 
   int getQuantity() {
     final minQ = currentExercise['min_quantity'] as int? ?? 0;
@@ -53,42 +73,42 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     return type.contains('each_side') || type.contains('each_direction');
   }
 
-  @override
-  void initState() {
-    super.initState();
-
-    tickPlayer = AudioPlayer();
-    dingPlayer = AudioPlayer();
-
-    pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-      lowerBound: 0.95,
-      upperBound: 1.05,
-    );
-
-    startExercise();
-  }
-
-  void startExercise() {
+  Future<void> startCurrentExercise() async {
     exerciseTimer?.cancel();
+    isResting = false;
+    mediaReady = false;
+    if (mounted) setState(() {});
+
+    final url = currentExercise['media_url'];
+    if (url != null && url.toString().isNotEmpty) {
+      try {
+        await precacheImage(CachedNetworkImageProvider(url), context);
+      } catch (_) {}
+    }
+
+    mediaReady = true;
+    if (mounted) setState(() {});
+
+    int seconds;
+    if (isTimedExercise()) {
+      seconds = max(1, getQuantity());
+      if (isPerSide()) seconds *= 2;
+    } else {
+      seconds = 0;
+    }
+
+    totalSeconds = seconds;
+    remainingSeconds = seconds;
     isPaused = false;
 
-    pulseController.stop();
-    pulseController.value = 1.0;
-
     if (isTimedExercise()) {
-      int base = max(1, getQuantity());
-      totalSeconds = isPerSide() ? base * 2 : base;
-      remainingSeconds = totalSeconds;
-
       exerciseTimer = Timer.periodic(const Duration(seconds: 1), (t) async {
         if (isPaused) return;
 
         if (remainingSeconds <= 1) {
           t.cancel();
           await dingPlayer.play(AssetSource('sounds/ding.wav'));
-          finishSet();
+          startRestOrNext();
         } else {
           setState(() => remainingSeconds--);
 
@@ -98,39 +118,71 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
           }
         }
       });
+    } else {
+      setState(() {});
     }
-
-    setState(() {});
   }
 
-  Future<void> finishSet() async {
-    exerciseTimer?.cancel();
-
-    final result = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => RestScreen(restSeconds: widget.restSeconds),
-      ),
-    );
-
-    if (result != true) return;
-
+  void startRestOrNext() {
     final totalSets = currentExercise['sets'] as int? ?? 1;
 
-    setState(() {
-      if (currentSet < totalSets) {
-        currentSet++;
-        startExercise();
-      } else {
-        if (currentIndex + 1 >= widget.exercises.length) {
-          Navigator.pop(context);
-        } else {
+    if (currentSet < totalSets || currentIndex < widget.exercises.length - 1) {
+      startRest();
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
+  void startRest() {
+    exerciseTimer?.cancel();
+    isResting = true;
+    remainingSeconds = widget.restSeconds;
+    totalSeconds = widget.restSeconds;
+    setState(() {});
+
+    exerciseTimer = Timer.periodic(const Duration(seconds: 1), (t) async {
+      if (isPaused) return;
+
+      if (remainingSeconds <= 1) {
+        t.cancel();
+        await dingPlayer.play(AssetSource('sounds/ding.wav'));
+        isResting = false;
+
+        final totalSets = currentExercise['sets'] as int? ?? 1;
+        if (currentSet < totalSets) {
+          currentSet++;
+        } else if (currentIndex < widget.exercises.length - 1) {
           currentIndex++;
           currentSet = 1;
-          startExercise();
+        }
+
+        startCurrentExercise();
+      } else {
+        setState(() => remainingSeconds--);
+
+        if (remainingSeconds <= 5) {
+          await tickPlayer.play(AssetSource('sounds/tick.wav'));
+          pulseController.forward(from: 0.95);
         }
       }
     });
+  }
+
+  void finishExercise() {
+    exerciseTimer?.cancel();
+
+    final totalSets = currentExercise['sets'] as int? ?? 1;
+    if (currentSet < totalSets) {
+      currentSet++;
+    } else if (currentIndex < widget.exercises.length - 1) {
+      currentIndex++;
+      currentSet = 1;
+    } else {
+      Navigator.pop(context);
+      return;
+    }
+
+    startRest();
   }
 
   void togglePause() {
@@ -142,6 +194,23 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
       remainingSeconds += s;
       totalSeconds += s;
     });
+  }
+
+  void skipRestOrExercise() {
+    exerciseTimer?.cancel();
+    final totalSets = currentExercise['sets'] as int? ?? 1;
+    if (isResting) {
+      if (currentSet < totalSets) {
+        currentSet++;
+      } else if (currentIndex < widget.exercises.length - 1) {
+        currentIndex++;
+        currentSet = 1;
+      } else {
+        Navigator.pop(context);
+        return;
+      }
+    }
+    startCurrentExercise();
   }
 
   @override
@@ -158,134 +227,142 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     final ex = currentExercise;
     final isTimed = isTimedExercise();
     final qty = getQuantity();
-
-    final progress =
-    isTimed ? (remainingSeconds / totalSeconds).clamp(0.0, 1.0) : 1.0;
+    final progress = (remainingSeconds / totalSeconds).clamp(0.0, 1.0);
 
     return Scaffold(
-      appBar: AppBar(title: Text(ex['name'] ?? 'Exercise')),
+      appBar: AppBar(
+        title: Text(isResting ? "Rest" : ex['name'] ?? 'Exercise'),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: ex['media_url'] != null && ex['media_url'].toString().isNotEmpty
-                  ? Image.network(ex['media_url'],
-                  height: 240, width: double.infinity, fit: BoxFit.cover)
-                  : Container(
-                height: 240,
-                color: Colors.grey.shade300,
-                child: const Center(child: Text("No media")),
+            if (!isResting) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: mediaReady
+                    ? CachedNetworkImage(
+                  imageUrl: ex['media_url'],
+                  height: 240,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => const SizedBox(
+                      height: 240,
+                      child: Center(child: CircularProgressIndicator())),
+                  errorWidget: (_, __, ___) => Container(
+                      height: 240,
+                      color: Colors.grey,
+                      child: const Icon(Icons.broken_image)),
+                )
+                    : const SizedBox(
+                    height: 240,
+                    child: Center(child: CircularProgressIndicator())),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                "Set $currentSet / ${ex['sets'] ?? 1}",
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 24),
+            ] else ...[
+              const SizedBox(height: 40),
+              const Text("Take a short break", style: TextStyle(fontSize: 24)),
+              const SizedBox(height: 16),
+            ],
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final size = min(constraints.maxWidth, constraints.maxHeight) * 0.6;
+                  return Center(
+                    child: ScaleTransition(
+                      scale: remainingSeconds <= 5
+                          ? pulseController
+                          : const AlwaysStoppedAnimation(1.0),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox(
+                            width: size,
+                            height: size,
+                            child: CircularProgressIndicator(
+                              value: 1,
+                              strokeWidth: size * 0.07,
+                              valueColor: AlwaysStoppedAnimation(Colors.grey.shade300),
+                            ),
+                          ),
+                          if (isTimed || isResting)
+                            SizedBox(
+                              width: size,
+                              height: size,
+                              child: CircularProgressIndicator(
+                                value: progress,
+                                strokeWidth: size * 0.07,
+                              ),
+                            ),
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              if (isTimed || isResting)
+                                Text(
+                                  "$remainingSeconds",
+                                  style: TextStyle(
+                                    fontSize: size * 0.22,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                )
+                              else
+                                Text(
+                                  isPerSide()
+                                      ? "$qty reps each side"
+                                      : "$qty reps",
+                                  style: TextStyle(
+                                    fontSize: size * 0.18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              const SizedBox(height: 4),
+                              if (isTimed || isResting)
+                                const Text("seconds")
+                              else
+                                const SizedBox.shrink(),
+                              if (!isTimed && !isResting)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 16),
+                                  child: ElevatedButton(
+                                    onPressed: finishExercise,
+                                    child: const Text("Finish Set"),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
-
-            const SizedBox(height: 16),
-
-            Text("Set $currentSet / ${ex['sets'] ?? 1}",
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-
-            const SizedBox(height: 24),
-
-            if (isTimed)
-              ScaleTransition(
-                scale: remainingSeconds <= 5
-                    ? pulseController
-                    : const AlwaysStoppedAnimation(1.0),
-                child: SizedBox(
-                  width: 320,
-                  height: 320,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Background ring
-                      SizedBox(
-                        width: 300,
-                        height: 300,
-                        child: CircularProgressIndicator(
-                          value: 1,
-                          strokeWidth: 18,
-                          valueColor: AlwaysStoppedAnimation(Colors.grey.shade300),
-                        ),
-                      ),
-
-                      // Progress ring
-                      SizedBox(
-                        width: 240,
-                        height: 240,
-                        child: CircularProgressIndicator(
-                          value: progress,
-                          strokeWidth: 18,
-                        ),
-                      ),
-
-                      // Center content
-                      Container(
-                        width: 180,
-                        height: 180,
-                        alignment: Alignment.center,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              "$remainingSeconds",
-                              style: const TextStyle(
-                                fontSize: 72,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              "seconds",
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-
-            else
-              Column(
+            if (isTimed || isResting)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    isPerSide() ? "$qty reps each side" : "$qty reps",
-                    style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 20),
                   ElevatedButton(
-                    onPressed: finishSet,
-                    child: const Text("Finish Set"),
+                    onPressed: togglePause,
+                    child: Text(isPaused ? "Resume" : "Pause"),
+                  ),
+                  const SizedBox(width: 12),
+                  if (!isResting)
+                    ElevatedButton(
+                      onPressed: () => addSeconds(5),
+                      child: const Text("+5s"),
+                    ),
+                  const SizedBox(width: 12),
+                  ElevatedButton(
+                    onPressed: skipRestOrExercise,
+                    child: const Text("Skip"),
                   ),
                 ],
               ),
-
-            const Spacer(),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ElevatedButton(
-                  onPressed: togglePause,
-                  child: Text(isPaused ? "Resume" : "Pause"),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: () => addSeconds(5),
-                  child: const Text("+5s"),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: () => addSeconds(10),
-                  child: const Text("+10s"),
-                ),
-              ],
-            ),
           ],
         ),
       ),
