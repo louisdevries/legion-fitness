@@ -3,12 +3,14 @@ import 'screens/home_screen.dart';
 import 'screens/programs_screen.dart';
 import 'screens/progress_screen.dart';
 import 'screens/profile_screen.dart';
+import 'screens/outdoor_run_screen.dart'; // ✅ New Outdoor Run Screen
 
 import 'auth/welcome_screen.dart';
 import 'auth/auth_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+// Decide the first screen based on welcome and login status
 Future<Widget> _decideStartScreen() async {
   final prefs = await SharedPreferences.getInstance();
   final hasSeenWelcome = prefs.getBool("hasSeenWelcome") ?? false;
@@ -22,10 +24,10 @@ Future<Widget> _decideStartScreen() async {
   return const MainShell();
 }
 
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Initialize Supabase
   await Supabase.initialize(
     url: 'https://nvfoyrffwmufohcfppac.supabase.co',
     anonKey: 'sb_publishable_Azh2yCvYGguExBupLcQHTQ_hU9y4WVy',
@@ -33,7 +35,6 @@ Future<void> main() async {
 
   runApp(const LegionFitnessApp());
 }
-
 
 class LegionFitnessApp extends StatelessWidget {
   const LegionFitnessApp({super.key});
@@ -75,15 +76,19 @@ class _MainShellState extends State<MainShell> {
   final List<Widget> _screens = [
     const HomeScreen(),
     const ProgramsScreen(),
+    const OutdoorRunScreen(), // ✅ Outdoor Run tab
     const ProgressScreen(),
     const ProfileScreen(),
+
   ];
 
   final List<String> _titles = const [
     'Home',
     'Programs',
+    'Outdoor Run', // ✅ Title for app bar
     'Progress',
     'Profile',
+
   ];
 
   @override
@@ -105,6 +110,7 @@ class _MainShellState extends State<MainShell> {
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.fitness_center), label: 'Programs'),
+          BottomNavigationBarItem(icon: Icon(Icons.directions_run), label: 'Run'), // ✅ Outdoor Run
           BottomNavigationBarItem(icon: Icon(Icons.show_chart), label: 'Progress'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],

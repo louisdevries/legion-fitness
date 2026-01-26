@@ -41,42 +41,53 @@ class ProgramsScreen extends StatelessWidget {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
+                  alignment: Alignment.bottomLeft,
                   children: [
-                    ClipRRect(
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                      child: Image.network(
-                        program.imageUrl,
-                        height: 150,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          height: 150,
-                          color: Colors.grey.shade300,
-                          child: const Icon(Icons.image, size: 50),
+                    Image.network(
+                      program.imageUrl,
+                      height: 180,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        height: 180,
+                        color: Colors.grey.shade300,
+                        child: const Icon(Icons.image, size: 50),
+                      ),
+                    ),
+
+                    // Gradient overlay
+                    Container(
+                      height: 180,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            Colors.black.withOpacity(0.7),
+                            Colors.transparent,
+                          ],
                         ),
                       ),
                     ),
+
+                    // Program name
                     Padding(
                       padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            program.name,
-                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            program.description,
-                            style: const TextStyle(fontSize: 16, color: Colors.grey),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            "${program.weeks} weeks",
-                            style: const TextStyle(fontSize: 14, color: Colors.grey),
-                          ),
-                        ],
+                      child: Text(
+                        program.name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black54,
+                              blurRadius: 4,
+                            )
+                          ],
+                        ),
                       ),
                     ),
                   ],

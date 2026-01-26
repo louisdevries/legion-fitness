@@ -4,7 +4,6 @@ import '../models/progress_log.dart';
 final supabase = Supabase.instance.client;
 
 class ProgressService {
-  /// Fetch all progress logs for a user for a program
   static Future<List<ProgressLog>> getUserProgress(int programId) async {
     final user = supabase.auth.currentUser;
     if (user == null) return [];
@@ -24,7 +23,6 @@ class ProgressService {
     return [];
   }
 
-  /// Check if a specific day is completed
   static Future<bool> isDayCompleted({
     required int programId,
     required int weekNumber,
@@ -33,7 +31,6 @@ class ProgressService {
     final user = supabase.auth.currentUser;
     if (user == null) return false;
 
-    // Total exercises for this day
     final exercises = await supabase
         .from('program_exercises')
         .select('id')
@@ -43,7 +40,6 @@ class ProgressService {
 
     final totalExercises = (exercises as List).length;
 
-    // Logged exercises
     final logs = await supabase
         .from('progress_logs')
         .select('id')
@@ -57,7 +53,6 @@ class ProgressService {
     return completedCount >= totalExercises;
   }
 
-  /// Log exercise completion
   static Future<void> logExercise({
     required int programId,
     required int exerciseId,
