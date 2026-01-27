@@ -62,17 +62,27 @@ class ProgressService {
     double? weightUsedKg,
   }) async {
     final user = supabase.auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      print('No user logged in, cannot log exercise.');
+      return;
+    }
 
-    await supabase.from('progress_logs').insert({
-      'user_id': user.id,
-      'program_id': programId,
-      'exercise_id': exerciseId,
-      'week_number': weekNumber,
-      'day_number': dayNumber,
-      'reps_completed': repsCompleted,
-      'weight_used_kg': weightUsedKg,
-      'date': DateTime.now().toIso8601String(),
-    });
+    try {
+      final response = await supabase.from('progress_logs').insert({
+        'user_id': user.id,
+        'program_id': programId,
+        'exercise_id': exerciseId,
+        'week_number': weekNumber,
+        'day_number': dayNumber,
+        'reps_completed': repsCompleted,
+        'weight_used_kg': weightUsedKg,
+        'date': DateTime.now().toIso8601String(),
+      });
+
+      print('Insert response: $response');
+    } catch (e, stack) {
+      print('Error inserting progress log: $e');
+      print(stack);
+    }
   }
 }

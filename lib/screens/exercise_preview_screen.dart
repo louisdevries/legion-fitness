@@ -7,9 +7,17 @@ class ExercisePreviewScreen extends StatefulWidget {
   final List<Map<String, dynamic>> exercises;
   final int restSeconds;
 
+  // ✅ ADD THESE
+  final int programId;
+  final int weekNumber;
+  final int dayNumber;
+
   const ExercisePreviewScreen({
     super.key,
     required this.exercises,
+    required this.programId,
+    required this.weekNumber,
+    required this.dayNumber,
     this.restSeconds = 60,
   });
 
@@ -33,6 +41,11 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
             builder: (_) => ExerciseRunnerScreen(
               exercises: widget.exercises,
               restSeconds: widget.restSeconds,
+
+              // ✅ PASS THEM THROUGH
+              programId: widget.programId,
+              weekNumber: widget.weekNumber,
+              dayNumber: widget.dayNumber,
             ),
           ),
         );
@@ -77,12 +90,14 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
                   final maxQ = ex['max_quantity'] as int? ?? minQ;
                   final qty = ((minQ + maxQ) / 2).round();
                   final sets = ex['sets'] as int? ?? 1;
-                  final durationType = (ex['duration_type'] as String? ?? 'reps').toLowerCase();
+                  final durationType =
+                  (ex['duration_type'] as String? ?? 'reps').toLowerCase();
 
                   return Card(
                     margin: const EdgeInsets.only(bottom: 12),
                     child: ListTile(
-                      leading: ex['media_url'] != null
+                      leading: ex['media_url'] != null &&
+                          ex['media_url'].toString().isNotEmpty
                           ? ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: CachedNetworkImage(

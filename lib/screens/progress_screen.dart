@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../models/progress_log.dart';
+import '../models/exercise.dart';
 import '../services/progress_service.dart';
+import '../services/exercise_service.dart'; // You need a service to fetch exercises
 
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
@@ -13,6 +15,8 @@ class ProgressScreen extends StatefulWidget {
 class _ProgressScreenState extends State<ProgressScreen> {
   bool isLoading = true;
   List<ProgressLog> logs = [];
+  List<Exercise> exercises = [];
+  Exercise? selectedExercise;
 
   @override
   void initState() {
@@ -23,16 +27,23 @@ class _ProgressScreenState extends State<ProgressScreen> {
   Future<void> loadProgress() async {
     setState(() => isLoading = true);
     try {
-      // Fetch all progress for all programs
-      // Or you can filter by a specific programId if needed
-      final allProgramsLogs = <ProgressLog>[];
-
-      // For demonstration, fetch logs for programId = 1
-      // Replace or loop through multiple programs if needed
+      // Fetch logs
       final programLogs = await ProgressService.getUserProgress(1);
-      allProgramsLogs.addAll(programLogs);
 
-      setState(() => logs = allProgramsLogs);
+      // Fetch exercises
+      final exerciseList = await ExerciseService.getAllExercises();
+
+      setState(() {
+        logs = programLogs;
+        exercises = exerciseList;
+
+        if (logs.isNotEmpty && exercises.isNotEmpty) {
+          // Pick the first exercise from logs as default
+          final firstExerciseId = logs.first.exerciseId;
+          selectedExercise =
+              exercises.firstWhere((ex) => ex.id == firstExerciseId);
+        }
+      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -44,43 +55,82 @@ class _ProgressScreenState extends State<ProgressScreen> {
     }
   }
 
+  /// Aggregate logs per day for selected exercise
+  List<_DayProgress> _aggregatePerDay(List<ProgressLog> logs, int exerciseId) {
+    final Map<DateTime, double> repsPerDay = {};
+
+    for (final log in logs) {
+      if (log.exerciseId != exerciseId) continue;
+
+      final day = DateTime(log.date.year, log.date.month, log.date.day);
+      final reps = log.repsCompleted.toDouble();
+
+      // Use max reps per day
+      if (!repsPerDay.containsKey(day) || reps > repsPerDay[day]!) {
+        repsPerDay[day] = reps;
+      }
+    }
+
+    final result = repsPerDay.entries
+        .map((e) => _DayProgress(date: e.key, value: e.value))
+        .toList();
+
+    result.sort((a, b) => a.date.compareTo(b.date));
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (logs.isEmpty) {
-      return const Center(child: Text("No progress logged yet."));
+    if (logs.isEmpty || exercises.isEmpty) {
+      return const Center(child: Text("No progress or exercises available."));
     }
 
-    // Sort by date
-    logs.sort((a, b) => a.date.compareTo(b.date));
-
-    // Prepare FlSpot data
-    final spots = <FlSpot>[];
-    for (var i = 0; i < logs.length; i++) {
-      final log = logs[i];
-      // Use weight if available, otherwise reps
-      final y = log.weightUsedKg ?? log.repsCompleted.toDouble();
-      spots.add(FlSpot(i.toDouble(), y));
-    }
+    final aggregated = selectedExercise != null
+        ? _aggregatePerDay(logs, selectedExercise!.id)
+        : <_DayProgress>[];
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
           const Text(
-            "Progress Over Time",
+            "Progress Over Time (Reps)",
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
           ),
+          const SizedBox(height: 16),
+
+          // Exercise dropdown
+          DropdownButton<Exercise>(
+            value: selectedExercise,
+            items: exercises
+                .map((ex) => DropdownMenuItem<Exercise>(
+              value: ex,
+              child: Text(ex.name),
+            ))
+                .toList(),
+            onChanged: (value) {
+              setState(() {
+                selectedExercise = value;
+              });
+            },
+          ),
+
           const SizedBox(height: 24),
           Expanded(
-            child: LineChart(
+            child: aggregated.isEmpty
+                ? const Center(child: Text("No data for this exercise yet."))
+                : LineChart(
               LineChartData(
                 lineBarsData: [
                   LineChartBarData(
-                    spots: spots,
+                    spots: [
+                      for (var i = 0; i < aggregated.length; i++)
+                        FlSpot(i.toDouble(), aggregated[i].value)
+                    ],
                     isCurved: true,
                     barWidth: 3,
                     color: Theme.of(context).primaryColor,
@@ -91,11 +141,17 @@ class _ProgressScreenState extends State<ProgressScreen> {
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
+                      interval: 1,
                       getTitlesWidget: (value, meta) {
-                        int index = value.toInt();
-                        if (index < 0 || index >= logs.length) return const SizedBox();
-                        final date = logs[index].date;
-                        return Text("${date.day}/${date.month}");
+                        final index = value.toInt();
+                        if (index < 0 || index >= aggregated.length) {
+                          return const SizedBox();
+                        }
+                        final date = aggregated[index].date;
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: Text("${date.day}/${date.month}"),
+                        );
                       },
                     ),
                   ),
@@ -112,4 +168,11 @@ class _ProgressScreenState extends State<ProgressScreen> {
       ),
     );
   }
+}
+
+class _DayProgress {
+  final DateTime date;
+  final double value;
+
+  _DayProgress({required this.date, required this.value});
 }

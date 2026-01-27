@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../auth/auth_service.dart';
 import '../auth/login_screen.dart';
-import '../main.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -22,13 +21,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadUser() async {
-    final token = await AuthService.getToken(); // checks if logged in
+    final user = AuthService.currentUser;
     final name = await AuthService.getUserName();
-    final email = await AuthService.getUserEmail();
+    final email = AuthService.getUserEmail();
 
     if (!mounted) return;
     setState(() {
-      isLoggedIn = token != null;
+      isLoggedIn = user != null;
       userName = name;
       userEmail = email;
     });
@@ -78,8 +77,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 context,
                 MaterialPageRoute(builder: (_) => const LoginScreen()),
               ).then((_) {
-                // Reload profile after returning from login
-                _loadUser();
+                _loadUser(); // Reload profile after login
               });
             },
             child: const Text('Login or Register'),

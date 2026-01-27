@@ -1,33 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+// Screens
+import 'auth/login_screen.dart';
+import 'auth/welcome_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/programs_screen.dart';
 import 'screens/progress_screen.dart';
 import 'screens/profile_screen.dart';
-import 'screens/outdoor_run_screen.dart'; // ✅ New Outdoor Run Screen
-
-import 'auth/welcome_screen.dart';
-import 'auth/auth_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
-// Decide the first screen based on welcome and login status
-Future<Widget> _decideStartScreen() async {
-  final prefs = await SharedPreferences.getInstance();
-  final hasSeenWelcome = prefs.getBool("hasSeenWelcome") ?? false;
-  final isLoggedIn = await AuthService.getToken() != null;
-
-  if (!hasSeenWelcome) {
-    return const WelcomeScreen();
-  }
-
-  // If user has seen welcome, go to app
-  return const MainShell();
-}
+import 'screens/outdoor_run_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Supabase
   await Supabase.initialize(
     url: 'https://nvfoyrffwmufohcfppac.supabase.co',
     anonKey: 'sb_publishable_Azh2yCvYGguExBupLcQHTQ_hU9y4WVy',
@@ -48,20 +34,67 @@ class LegionFitnessApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: FutureBuilder<Widget>(
-        future: _decideStartScreen(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
-          return snapshot.data!;
-        },
-      ),
+      home: const AuthGate(), // ✅ AUTH IS NOW HANDLED HERE
     );
   }
 }
+
+class AuthGate extends StatefulWidget {
+  const AuthGate({super.key});
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  bool? hasSeenWelcome;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWelcomeFlag();
+  }
+
+  Future<void> _loadWelcomeFlag() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      hasSeenWelcome = prefs.getBool("hasSeenWelcome") ?? false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (hasSeenWelcome == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    return StreamBuilder<AuthState>(
+      stream: Supabase.instance.client.auth.onAuthStateChange,
+      builder: (context, snapshot) {
+        final session = Supabase.instance.client.auth.currentSession;
+
+        // 1️⃣ First launch → show welcome
+        if (!hasSeenWelcome!) {
+          return const WelcomeScreen();
+        }
+
+        // 2️⃣ Logged in → main app
+        if (session != null) {
+          return const MainShell();
+        }
+
+        // 3️⃣ Not logged in → login screen
+        return const LoginScreen();
+      },
+    );
+  }
+}
+
+// =======================================================
+// ===================== MAIN SHELL =======================
+// =======================================================
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -73,22 +106,20 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = [
-    const HomeScreen(),
-    const ProgramsScreen(),
-    const OutdoorRunScreen(), // ✅ Outdoor Run tab
-    const ProgressScreen(),
-    const ProfileScreen(),
-
+  final List<Widget> _screens = const [
+    HomeScreen(),
+    ProgramsScreen(),
+    OutdoorRunScreen(),
+    ProgressScreen(),
+    ProfileScreen(),
   ];
 
   final List<String> _titles = const [
     'Home',
     'Programs',
-    'Outdoor Run', // ✅ Title for app bar
+    'Outdoor Run',
     'Progress',
     'Profile',
-
   ];
 
   @override
@@ -110,7 +141,7 @@ class _MainShellState extends State<MainShell> {
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.fitness_center), label: 'Programs'),
-          BottomNavigationBarItem(icon: Icon(Icons.directions_run), label: 'Run'), // ✅ Outdoor Run
+          BottomNavigationBarItem(icon: Icon(Icons.directions_run), label: 'Run'),
           BottomNavigationBarItem(icon: Icon(Icons.show_chart), label: 'Progress'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],

@@ -1,103 +1,91 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:crypto/crypto.dart';
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 
 final supabase = Supabase.instance.client;
-final _storage = FlutterSecureStorage();
 
 class AuthService {
-  /// Register a new user
-  /// Returns null if successful, otherwise returns an error message
+  /// Register new user using Supabase Auth
   static Future<String?> register(String name, String email, String password) async {
     try {
-      // Check if email already exists
-      final existing = await supabase
-          .from('users')
-          .select()
-          .eq('email', email)
-          .maybeSingle();
+      // 1️⃣ Create auth user
+      final signUpRes = await supabase.auth.signUp(
+        email: email,
+        password: password,
+      );
 
-      if (existing != null) return "Email already registered";
+      if (signUpRes.user == null) {
+        return "Failed to create account";
+      }
 
-      // Hash password (SHA256 example, ideally use server-side hashing)
-      final passwordHash = sha256.convert(utf8.encode(password)).toString();
+      // 2️⃣ IMPORTANT: Sign in immediately to get a session
+      final loginRes = await supabase.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
 
-      final response = await supabase.from('users').insert({
+      if (loginRes.session == null) {
+        return "Account created but login failed";
+      }
+
+      final user = loginRes.user!;
+
+      // 3️⃣ Now we ARE authenticated → RLS allows insert
+      await supabase.from('users').insert({
+        'id': user.id,
         'email': email,
         'name': name,
         'username': email.split('@')[0],
-        'password_hash': passwordHash,
         'is_paid_user': false,
         'is_admin': false,
-      }).select().single();
+      });
 
-      if (response == null) return "Failed to register";
-
-      // Save token locally (just user id for now)
-      await _storage.write(key: 'token', value: response['id']);
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('user_email', email);
-      await prefs.setString('user_name', name);
-
-      return null; // success
+      return null;
     } catch (e) {
-      print("Register error: $e");
-      return "An error occurred";
+      return e.toString();
     }
   }
 
-  /// Login existing user
-  /// Returns null if successful, otherwise returns an error message
+
+  /// Login using Supabase Auth
   static Future<String?> login(String email, String password) async {
     try {
-      final passwordHash = sha256.convert(utf8.encode(password)).toString();
+      final res = await supabase.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
 
-      final response = await supabase
-          .from('users')
-          .select()
-          .eq('email', email)
-          .eq('password_hash', passwordHash)
-          .maybeSingle();
+      if (res.session == null) return "Invalid email or password";
 
-      if (response == null) return "Invalid email or password";
-
-      await _storage.write(key: 'token', value: response['id']);
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('user_email', email);
-      await prefs.setString('user_name', response['name'] ?? email.split('@')[0]);
-
-      return null; // success
+      return null;
     } catch (e) {
-      print("Login error: $e");
-      return "An error occurred";
+      return e.toString();
     }
-  }
-
-  /// Get current user name
-  static Future<String?> getUserName() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString("user_name");
-  }
-
-  /// Get current user email
-  static Future<String?> getUserEmail() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString("user_email");
-  }
-
-  /// Get current token (user id)
-  static Future<String?> getToken() async {
-    return await _storage.read(key: "token");
   }
 
   /// Logout
   static Future<void> logout() async {
-    await _storage.delete(key: "token");
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+    await supabase.auth.signOut();
+  }
+
+  /// Current logged-in user
+  static User? get currentUser => supabase.auth.currentUser;
+
+  /// Get user name from 'users' table
+  static Future<String?> getUserName() async {
+    final user = currentUser;
+    if (user == null) return null;
+
+    final res = await supabase
+        .from('users')
+        .select('name')
+        .eq('id', user.id)
+        .maybeSingle();
+
+    return res?['name'] as String?;
+  }
+
+  /// Get user email
+  static String? getUserEmail() {
+    final user = currentUser;
+    return user?.email;
   }
 }

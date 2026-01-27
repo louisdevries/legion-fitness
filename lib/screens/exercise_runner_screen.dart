@@ -6,119 +6,19 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
 import '../services/progress_service.dart';
 
-// MOCK: Fetch exercises from DB or API
-class ExerciseService {
-  static Future<List<Map<String, dynamic>>> fetchExercises({
-    required int programId,
-    required int weekNumber,
-    required int dayNumber,
-  }) async {
-    // Replace with real Supabase call
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    return [
-      {
-        'id': 1,
-        'name': 'Light Jogging in Place',
-        'coaching_cues': '',
-        'media_url': 'https://res.cloudinary.com/dj66v3aj7/image/upload/v1748938223/20250603_0933_Jogging_in_Place_remix_01jwtb9etwf8ea52mmqjbt4f98_hngyiw.png',
-        'sets': 3,
-        'min_quantity': 30,
-        'max_quantity': 30,
-        'duration_type': 'seconds',
-        'is_superset': false,
-        'has_alternative': false,
-      },
-      {
-        'id': 2,
-        'name': 'Push Ups',
-        'coaching_cues': 'Keep back straight',
-        'media_url': '',
-        'sets': 3,
-        'min_quantity': 10,
-        'max_quantity': 15,
-        'duration_type': 'reps',
-        'is_superset': false,
-        'has_alternative': false,
-      },
-    ];
-  }
-}
-
-// SCREEN THAT LOADS AND PASSES EXERCISES TO RUNNER
-class ProgramDayScreen extends StatefulWidget {
+class ExerciseRunnerScreen extends StatefulWidget {
+  final List<Map<String, dynamic>> exercises;
+  final int restSeconds;
   final int programId;
   final int weekNumber;
   final int dayNumber;
 
-  const ProgramDayScreen({
-    super.key,
-    required this.programId,
-    required this.weekNumber,
-    required this.dayNumber,
-  });
-
-  @override
-  State<ProgramDayScreen> createState() => _ProgramDayScreenState();
-}
-
-class _ProgramDayScreenState extends State<ProgramDayScreen> {
-  bool isLoading = true;
-  List<Map<String, dynamic>> exercises = [];
-
-  @override
-  void initState() {
-    super.initState();
-    loadExercises();
-  }
-
-  Future<void> loadExercises() async {
-    final rawExercises = await ExerciseService.fetchExercises(
-      programId: widget.programId,
-      weekNumber: widget.weekNumber,
-      dayNumber: widget.dayNumber,
-    );
-
-    // ✅ ENRICH EXERCISES TO INCLUDE REQUIRED LOGGING IDS
-    final enrichedExercises = rawExercises.map((e) {
-      return {
-        ...e,
-        'exercise_id': e['id'],               // map exercise primary key
-        'program_id': widget.programId,
-        'week_number': widget.weekNumber,
-        'day_number': widget.dayNumber,
-      };
-    }).toList();
-
-    setState(() {
-      exercises = enrichedExercises;
-      isLoading = false;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    return ExerciseRunnerScreen(
-      exercises: exercises,
-      restSeconds: 60,
-    );
-  }
-}
-
-// THE EXERCISE RUNNER SCREEN (your original full code)
-class ExerciseRunnerScreen extends StatefulWidget {
-  final List<Map<String, dynamic>> exercises;
-  final int restSeconds;
-
   const ExerciseRunnerScreen({
     super.key,
     required this.exercises,
+    required this.programId,
+    required this.weekNumber,
+    required this.dayNumber,
     this.restSeconds = 60,
   });
 
@@ -126,8 +26,7 @@ class ExerciseRunnerScreen extends StatefulWidget {
   State<ExerciseRunnerScreen> createState() => _ExerciseRunnerScreenState();
 }
 
-class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
-    with SingleTickerProviderStateMixin {
+class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
   int currentIndex = 0;
   int currentSet = 1;
 
@@ -142,23 +41,52 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
 
   late final AudioPlayer tickPlayer;
   late final AudioPlayer dingPlayer;
-  late final AnimationController pulseController;
 
-  Map<String, dynamic> get currentExercise => widget.exercises[currentIndex];
+  late List<Map<String, dynamic>> exercises;
+
+  Map<String, dynamic> get currentExercise => exercises[currentIndex];
+
+  int get totalSets => currentExercise['sets'] as int? ?? 1;
+
+  bool get isLastSet => currentSet >= totalSets;
+  bool get isLastExercise => currentIndex >= exercises.length - 1;
+
+  Map<String, dynamic>? get previewExercise {
+    if (!isLastSet) {
+      // Preview is next set of same exercise
+      return currentExercise;
+    } else if (!isLastExercise) {
+      // Preview is next exercise
+      return exercises[currentIndex + 1];
+    }
+    return null;
+  }
+
+  String get previewLabel {
+    if (!isLastSet) {
+      return "Next: ${currentExercise['name']} (Set ${currentSet + 1}/$totalSets)";
+    } else if (!isLastExercise) {
+      return "Next: ${exercises[currentIndex + 1]['name']}";
+    }
+    return "Workout complete";
+  }
 
   @override
   void initState() {
     super.initState();
 
+    exercises = widget.exercises.map((e) {
+      return {
+        ...e,
+        'exercise_id': e['id'],
+        'program_id': widget.programId,
+        'week_number': widget.weekNumber,
+        'day_number': widget.dayNumber,
+      };
+    }).toList();
+
     tickPlayer = AudioPlayer();
     dingPlayer = AudioPlayer();
-
-    pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-      lowerBound: 0.95,
-      upperBound: 1.05,
-    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       startCurrentExercise();
@@ -172,28 +100,19 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     return ((minQ + maxQ) / 2).round();
   }
 
-  String getDurationType() {
-    return (currentExercise['duration_type'] as String? ?? 'reps').toLowerCase();
-  }
-
-  bool isTimedExercise() => getDurationType().contains('seconds');
-
-  bool isPerSide() {
-    final type = getDurationType();
-    return type.contains('each_side') || type.contains('each_direction');
+  bool isTimedExercise() {
+    final t = (currentExercise['duration_type'] ?? '').toString().toLowerCase();
+    return t.contains('sec');
   }
 
   bool isSuperset() => currentExercise['is_superset'] == true;
 
-  bool hasAlternative() =>
-      currentExercise['has_alternative'] == true &&
-          currentExercise['alternative'] != null;
-
   Future<void> startCurrentExercise() async {
     exerciseTimer?.cancel();
     isResting = false;
+    isPaused = false;
     mediaReady = false;
-    if (mounted) setState(() {});
+    setState(() {});
 
     final url = currentExercise['media_url'];
     if (url != null && url.toString().isNotEmpty) {
@@ -203,21 +122,13 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     }
 
     mediaReady = true;
-    if (mounted) setState(() {});
+    setState(() {});
 
+    // Set reps/seconds for exercise
     lastSelectedReps = getQuantity();
-
-    int seconds;
-    if (isTimedExercise()) {
-      seconds = max(1, getQuantity());
-      if (isPerSide()) seconds *= 2;
-    } else {
-      seconds = 0;
-    }
-
+    int seconds = isTimedExercise() ? max(1, getQuantity()) : 0;
     totalSeconds = seconds;
     remainingSeconds = seconds;
-    isPaused = false;
 
     if (isTimedExercise()) {
       exerciseTimer = Timer.periodic(const Duration(seconds: 1), (t) async {
@@ -226,13 +137,11 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
         if (remainingSeconds <= 1) {
           t.cancel();
           await dingPlayer.play(AssetSource('sounds/ding.wav'));
-          await finishSet();
+          await completeExerciseSet(logSet: true);
         } else {
           setState(() => remainingSeconds--);
-
           if (remainingSeconds <= 5) {
             await tickPlayer.play(AssetSource('sounds/tick.wav'));
-            pulseController.forward(from: 0.95);
           }
         }
       });
@@ -241,52 +150,34 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
 
   Future<void> logSetToDatabase() async {
     final ex = currentExercise;
-
-    final programId = ex['program_id'];
-    final exerciseId = ex['exercise_id'];
-    final weekNumber = ex['week_number'];
-    final dayNumber = ex['day_number'];
-
-    if (programId == null ||
-        exerciseId == null ||
-        weekNumber == null ||
-        dayNumber == null) {
-      debugPrint("❌ NOT LOGGING — missing IDs in exercise map:");
-      debugPrint(ex.toString());
-      return;
-    }
-
-    final repsToLog = lastSelectedReps;
-
     await ProgressService.logExercise(
-      programId: programId as int,
-      exerciseId: exerciseId as int,
-      weekNumber: weekNumber as int,
-      dayNumber: dayNumber as int,
-      repsCompleted: repsToLog,
+      programId: ex['program_id'],
+      exerciseId: ex['exercise_id'],
+      weekNumber: ex['week_number'],
+      dayNumber: ex['day_number'],
+      repsCompleted: lastSelectedReps,
       weightUsedKg: ex['weight_used_kg'] != null
           ? (ex['weight_used_kg'] as num).toDouble()
           : null,
     );
   }
 
-  Future<void> finishSet() async {
+  Future<void> completeExerciseSet({required bool logSet}) async {
     exerciseTimer?.cancel();
 
-    if (!isTimedExercise()) {
-      int selectedReps = lastSelectedReps;
-
-      await showModalBottomSheet(
-        context: context,
-        isDismissible: false,
-        builder: (_) {
-          return SizedBox(
+    // Only log if logSet = true
+    if (logSet) {
+      if (!isTimedExercise()) {
+        int selectedReps = lastSelectedReps;
+        await showModalBottomSheet(
+          context: context,
+          isDismissible: false,
+          builder: (_) => SizedBox(
             height: 320,
             child: Column(
               children: [
                 const SizedBox(height: 12),
-                const Text("How many reps did you do?",
-                    style: TextStyle(fontSize: 18)),
+                const Text("How many reps did you do?", style: TextStyle(fontSize: 18)),
                 Expanded(
                   child: CupertinoPicker(
                     itemExtent: 40,
@@ -306,40 +197,33 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
                   onPressed: () => Navigator.pop(context),
                   child: const Text("Confirm"),
                 ),
-                const SizedBox(height: 12),
               ],
             ),
-          );
-        },
-      );
+          ),
+        );
+        lastSelectedReps = selectedReps;
+      }
 
-      lastSelectedReps = selectedReps;
+      if (lastSelectedReps < 1) lastSelectedReps = getQuantity();
+      await logSetToDatabase();
     }
 
-    await logSetToDatabase();
-
-    final totalSets = currentExercise['sets'] as int? ?? 1;
-
-    if (currentSet < totalSets) {
-      currentSet++;
-    } else if (currentIndex < widget.exercises.length - 1) {
-      currentIndex++;
-      currentSet = 1;
-    } else {
-      Navigator.pop(context);
-      return;
-    }
-
-    if (isSuperset()) {
-      startCurrentExercise();
-    } else {
-      startRest();
+    // Determine next set/exercise
+    if (!isLastSet) {
+      // Next set of same exercise → start rest
+      startRest(nextExerciseIndex: currentIndex, nextSet: currentSet + 1);
+    } else if (!isLastExercise) {
+      // Last set of exercise → start rest before next exercise
+      startRest(nextExerciseIndex: currentIndex + 1, nextSet: 1);
+    } else if (logSet) {
+      await showWorkoutComplete();
     }
   }
 
-  void startRest() {
+  void startRest({required int nextExerciseIndex, required int nextSet}) {
     exerciseTimer?.cancel();
     isResting = true;
+    isPaused = false;
     remainingSeconds = widget.restSeconds;
     totalSeconds = widget.restSeconds;
     setState(() {});
@@ -350,12 +234,33 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
       if (remainingSeconds <= 1) {
         t.cancel();
         await dingPlayer.play(AssetSource('sounds/ding.wav'));
-        isResting = false;
+        currentIndex = nextExerciseIndex;
+        currentSet = nextSet;
         startCurrentExercise();
       } else {
         setState(() => remainingSeconds--);
       }
     });
+  }
+
+  Future<void> showWorkoutComplete() async {
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text("Workout Complete 💪"),
+        content: const Text("Great job! Your workout has been logged."),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context); // dialog
+              Navigator.pop(context); // screen
+            },
+            child: const Text("Finish"),
+          ),
+        ],
+      ),
+    );
   }
 
   void togglePause() => setState(() => isPaused = !isPaused);
@@ -367,31 +272,11 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     });
   }
 
-  void skipRestOrExercise() async {
-    exerciseTimer?.cancel();
-
-    if (isResting) {
-      isResting = false;
-      startCurrentExercise();
-    } else {
-      await finishSet();
-    }
-  }
-
-  void switchToAlternative() {
-    final alt = currentExercise['alternative'];
-    if (alt == null) return;
-
-    widget.exercises[currentIndex] = alt;
-    startCurrentExercise();
-  }
-
   @override
   void dispose() {
     exerciseTimer?.cancel();
     tickPlayer.dispose();
     dingPlayer.dispose();
-    pulseController.dispose();
     super.dispose();
   }
 
@@ -399,7 +284,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
   Widget build(BuildContext context) {
     final ex = currentExercise;
     final isTimed = isTimedExercise();
-    final qty = getQuantity();
+
     final progress = totalSeconds == 0
         ? 0.0
         : (remainingSeconds / totalSeconds).clamp(0.0, 1.0);
@@ -407,119 +292,131 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     return Scaffold(
       appBar: AppBar(
         title: Text(isResting ? "Rest" : ex['name'] ?? 'Exercise'),
+        backgroundColor: isResting ? Colors.green : null,
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            if (!isResting && hasAlternative())
-              ElevatedButton(
-                onPressed: switchToAlternative,
-                child: const Text("Switch Exercise"),
-              ),
-            if (!isResting)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: mediaReady
-                    ? CachedNetworkImage(
-                  imageUrl: ex['media_url'],
-                  height: 240,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                )
-                    : const SizedBox(
-                  height: 240,
-                  child: Center(child: CircularProgressIndicator()),
-                ),
-              ),
+            Text(previewLabel,
+                style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
-            Text("Set $currentSet / ${ex['sets'] ?? 1}",
-                style:
-                const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            !isResting
+                ? ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: mediaReady
+                  ? CachedNetworkImage(
+                imageUrl: ex['media_url'],
+                height: 220,
+                width: double.infinity,
+                fit: BoxFit.cover,
+              )
+                  : const SizedBox(
+                height: 220,
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            )
+                : Column(
+              children: [
+                const SizedBox(height: 20),
+                const Text("REST",
+                    style: TextStyle(
+                        fontSize: 48, fontWeight: FontWeight.bold)),
+                if (previewExercise != null) ...[
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: CachedNetworkImage(
+                      imageUrl: previewExercise!['media_url'],
+                      height: 160,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text("Set $currentSet / $totalSets",
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final size =
-                      min(constraints.maxWidth, constraints.maxHeight) * 0.75;
-
-                  return Center(
-                    child: ScaleTransition(
-                      scale: remainingSeconds <= 5
-                          ? pulseController
-                          : const AlwaysStoppedAnimation(1.0),
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          SizedBox(
-                            width: size,
-                            height: size,
-                            child: CircularProgressIndicator(
-                              value: 1,
-                              strokeWidth: size * 0.07,
-                              valueColor: AlwaysStoppedAnimation(
-                                  Colors.grey.shade300),
-                            ),
-                          ),
-                          if (isTimed || isResting)
-                            SizedBox(
-                              width: size,
-                              height: size,
-                              child: CircularProgressIndicator(
-                                value: progress,
-                                strokeWidth: size * 0.07,
-                              ),
-                            ),
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              if (isTimed || isResting)
-                                Text("$remainingSeconds",
-                                    style: TextStyle(
-                                        fontSize: size * 0.22,
-                                        fontWeight: FontWeight.bold))
-                              else
-                                Text(
-                                    isPerSide()
-                                        ? "$qty reps each side"
-                                        : "$qty reps",
-                                    style: TextStyle(
-                                        fontSize: size * 0.16,
-                                        fontWeight: FontWeight.bold)),
-                              if (!isTimed && !isResting)
-                                ElevatedButton(
-                                  onPressed: finishSet,
-                                  child: const Text("Finish Set"),
-                                ),
-                            ],
-                          ),
-                        ],
+              child: Center(
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      width: 220,
+                      height: 220,
+                      child: CircularProgressIndicator(
+                        value: 1,
+                        strokeWidth: 14,
+                        valueColor: AlwaysStoppedAnimation(Colors.grey.shade300),
                       ),
                     ),
-                  );
-                },
+                    if (isTimed || isResting)
+                      SizedBox(
+                        width: 220,
+                        height: 220,
+                        child: CircularProgressIndicator(
+                          value: progress,
+                          strokeWidth: 14,
+                        ),
+                      ),
+                    Text(
+                      isTimed || isResting
+                          ? "$remainingSeconds"
+                          : "$lastSelectedReps reps",
+                      style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
               ),
             ),
-            if (isTimed || isResting)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButton(
+                  onPressed: togglePause,
+                  child: Text(isPaused ? "Resume" : "Pause"),
+                ),
+                if (isTimed && !isResting)
                   ElevatedButton(
-                    onPressed: togglePause,
-                    child: Text(isPaused ? "Resume" : "Pause"),
+                    onPressed: () => completeExerciseSet(logSet: true),
+                    child: const Text("Skip"),
                   ),
-                  const SizedBox(width: 12),
+                if (isResting)
+                  ElevatedButton(
+                    onPressed: () {
+                      exerciseTimer?.cancel();
+                      // Skip rest → move to next set/exercise immediately
+                      int nextIndex = currentIndex;
+                      int nextSet = currentSet;
+                      if (!isLastSet) {
+                        nextSet = currentSet + 1;
+                      } else if (!isLastExercise) {
+                        nextIndex = currentIndex + 1;
+                        nextSet = 1;
+                      }
+                      currentIndex = nextIndex;
+                      currentSet = nextSet;
+                      startCurrentExercise();
+                    },
+                    child: const Text("Skip Rest"),
+                  ),
+                if (isResting)
                   ElevatedButton(
                     onPressed: () => addSeconds(10),
                     child: const Text("+10s"),
                   ),
-                  const SizedBox(width: 12),
+                if (!isTimed && !isResting)
                   ElevatedButton(
-                    onPressed: skipRestOrExercise,
-                    child: const Text("Skip"),
+                    onPressed: () => completeExerciseSet(logSet: true),
+                    child: const Text("Finish Set"),
                   ),
-                ],
-              ),
+              ],
+            ),
           ],
         ),
       ),

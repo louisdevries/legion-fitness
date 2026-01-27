@@ -81,7 +81,6 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
         children: [
           CustomScrollView(
             slivers: [
-
               // 🧱 COLLAPSING HEADER
               SliverAppBar(
                 expandedHeight: 260,
@@ -90,7 +89,6 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                 backgroundColor: Colors.black,
                 automaticallyImplyLeading: false,
 
-                // ✅ CUSTOM BACK BUTTON (ALWAYS VISIBLE)
                 leading: SafeArea(
                   child: Padding(
                     padding: const EdgeInsets.only(left: 8, top: 4),
@@ -161,7 +159,6 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                 padding: const EdgeInsets.all(16),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
-
                     const Text(
                       "Select Week",
                       style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -173,7 +170,8 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: weeks.length,
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 3,
                         crossAxisSpacing: 12,
                         mainAxisSpacing: 12,
@@ -193,17 +191,24 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
                             decoration: BoxDecoration(
-                              color: isSelected ? Theme.of(context).primaryColor : Colors.grey.shade200,
+                              color: isSelected
+                                  ? Theme.of(context).primaryColor
+                                  : Colors.grey.shade200,
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: isSelected
-                                  ? [const BoxShadow(color: Colors.black26, blurRadius: 6)]
+                                  ? const [
+                                BoxShadow(
+                                    color: Colors.black26,
+                                    blurRadius: 6)
+                              ]
                                   : [],
                             ),
                             child: Center(
                               child: Text(
                                 "Week $week",
                                 style: TextStyle(
-                                  color: isSelected ? Colors.white : Colors.black,
+                                  color:
+                                  isSelected ? Colors.white : Colors.black,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -217,7 +222,8 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
 
                     const Text(
                       "Select Workout",
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      style:
+                      TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 12),
 
@@ -227,21 +233,28 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                         padding: const EdgeInsets.only(bottom: 12),
                         child: Card(
                           elevation: 3,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
                           child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
                             title: Text(
                               "Workout Day $day",
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+                              style:
+                              const TextStyle(fontWeight: FontWeight.bold),
                             ),
-                            subtitle: const Text("Tap to start workout"),
-                            trailing: const Icon(Icons.arrow_forward_ios),
+                            subtitle:
+                            const Text("Tap to start workout"),
+                            trailing:
+                            const Icon(Icons.arrow_forward_ios),
                             onTap: isLoading
                                 ? null
                                 : () async {
                               setState(() => isLoading = true);
                               try {
-                                final exercises = await ProgramExerciseService.fetchExercisesForDay(
+                                final exercises =
+                                await ProgramExerciseService
+                                    .fetchExercisesForDay(
                                   programId: widget.programId,
                                   weekNumber: selectedWeek,
                                   dayNumber: day,
@@ -250,8 +263,11 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                                 if (!mounted) return;
 
                                 if (exercises.isEmpty) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('No exercises found for this day.')),
+                                  ScaffoldMessenger.of(context)
+                                      .showSnackBar(
+                                    const SnackBar(
+                                        content: Text(
+                                            'No exercises found for this day.')),
                                   );
                                   return;
                                 }
@@ -259,20 +275,30 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => ExercisePreviewScreen(
-                                      exercises: exercises,
-                                      restSeconds: 60,
-                                    ),
+                                    builder: (_) =>
+                                        ExercisePreviewScreen(
+                                          exercises: exercises,
+                                          restSeconds: 60,
+
+                                          // ✅ THIS IS THE FIX
+                                          programId: widget.programId,
+                                          weekNumber: selectedWeek,
+                                          dayNumber: day,
+                                        ),
                                   ),
                                 );
                               } catch (e) {
                                 if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Failed to load exercises: $e')),
+                                  ScaffoldMessenger.of(context)
+                                      .showSnackBar(
+                                    SnackBar(
+                                        content: Text(
+                                            'Failed to load exercises: $e')),
                                   );
                                 }
                               } finally {
-                                if (mounted) setState(() => isLoading = false);
+                                if (mounted)
+                                  setState(() => isLoading = false);
                               }
                             },
                           ),

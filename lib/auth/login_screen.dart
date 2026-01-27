@@ -46,7 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     if (error == null) {
-      Navigator.pop(context, true); // success → go back
+      // ✅ DO NOTHING — AuthGate will rebuild automatically
     }
   }
 
