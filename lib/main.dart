@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 // Screens
 import 'auth/login_screen.dart';
@@ -30,14 +31,32 @@ class LegionFitnessApp extends StatelessWidget {
     return MaterialApp(
       title: 'Legion Fitness',
       debugShowCheckedModeBanner: false,
+
+      // Force DD/MM/YYYY locale
+      locale: const Locale('en', 'ZA'),
+      supportedLocales: const [
+        Locale('en', 'ZA'),
+        Locale('en', 'GB'),
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const AuthGate(), // ✅ AUTH IS NOW HANDLED HERE
+
+      home: const AuthGate(),
     );
   }
 }
+
+// =======================================================
+// ===================== AUTH GATE ======================
+// =======================================================
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
@@ -82,22 +101,23 @@ class _AuthGateState extends State<AuthGate> {
 
         // 2️⃣ Logged in → main app
         if (session != null) {
-          return const MainShell();
+          return const MainShell(isGuest: false);
         }
 
-        // 3️⃣ Not logged in → login screen
-        return const LoginScreen();
+        // 3️⃣ Not logged in → allow guest access
+        return const MainShell(isGuest: true);
       },
     );
   }
 }
 
 // =======================================================
-// ===================== MAIN SHELL =======================
+// ===================== MAIN SHELL ======================
 // =======================================================
 
 class MainShell extends StatefulWidget {
-  const MainShell({super.key});
+  final bool isGuest;
+  const MainShell({super.key, this.isGuest = false});
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -106,14 +126,7 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = const [
-    HomeScreen(),
-    ProgramsScreen(),
-    OutdoorRunScreen(),
-    ProgressScreen(),
-    ProfileScreen(),
-  ];
-
+  late final List<Widget> _screens;
   final List<String> _titles = const [
     'Home',
     'Programs',
@@ -121,6 +134,31 @@ class _MainShellState extends State<MainShell> {
     'Progress',
     'Profile',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _screens = [
+      const HomeScreen(),
+      const ProgramsScreen(),
+      const OutdoorRunScreen(),
+      // Show guest-friendly message if not logged in
+      widget.isGuest
+          ? const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Text(
+            "Sign up or log in to track your progress 📈",
+            style: TextStyle(fontSize: 18),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      )
+          : const ProgressScreen(),
+      // Always use ProfileScreen, it handles guest vs logged-in internally
+      const ProfileScreen(),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {

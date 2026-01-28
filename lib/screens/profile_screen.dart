@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../auth/auth_service.dart';
 import '../auth/login_screen.dart';
+import '../screens/health_profile_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -40,26 +41,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ? Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          // ===== USER INFO =====
           Text(
             'Hello, $userName!',
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 12),
           Text(
             userEmail ?? '',
             style: const TextStyle(fontSize: 18, color: Colors.grey),
           ),
-          const SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: () async {
-              await AuthService.logout();
-              setState(() {
-                isLoggedIn = false;
-                userName = null;
-                userEmail = null;
-              });
-            },
-            child: const Text('Logout'),
+
+          const SizedBox(height: 24),
+
+          // ===== HEALTH PROFILE BUTTON =====
+          SizedBox(
+            width: 220,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.favorite),
+              label: const Text("Health Profile"),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const HealthProfileScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // ===== LOGOUT BUTTON =====
+          SizedBox(
+            width: 220,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.logout),
+              label: const Text("Logout"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                await AuthService.logout();
+                setState(() {
+                  isLoggedIn = false;
+                  userName = null;
+                  userEmail = null;
+                });
+              },
+            ),
           ),
         ],
       )
