@@ -5,12 +5,14 @@ import 'exercise_detail_service.dart';
 final supabase = Supabase.instance.client;
 
 class ProgramExerciseService {
-  /// Fetch all exercises for a program + week + day
   static Future<List<Map<String, dynamic>>> fetchExercisesForDay({
     required int programId,
     required int weekNumber,
     required int dayNumber,
   }) async {
+    final userId = supabase.auth.currentUser!.id;
+
+    // 1️⃣ Fetch program exercises for selected week/day
     final data = await supabase
         .from('program_exercises')
         .select()
@@ -19,11 +21,10 @@ class ProgramExerciseService {
         .eq('day_number', dayNumber);
 
     final programExercises = List<Map<String, dynamic>>.from(data);
-
     final List<Map<String, dynamic>> exercisesWithDetails = [];
 
     for (final pe in programExercises) {
-      // 1️⃣ Exercise info
+      // 2️⃣ Exercise info
       final exerciseInfo = await supabase
           .from('exercises')
           .select()
@@ -32,16 +33,47 @@ class ProgramExerciseService {
 
       if (exerciseInfo == null) continue;
 
-      // 2️⃣ Program exercise details
-      final details = await ProgramExerciseDetailService.fetchDetailsForExercise(pe['id']);
-      final detail = details.isNotEmpty ? details[0] : null;
+      // 3️⃣ Program exercise details (BASE values)
+      final details =
+      await ProgramExerciseDetailService.fetchDetailsForExercise(pe['id']);
+      final detail = details.isNotEmpty ? details.first : null;
 
+      int minQ = detail?.minQuantity ?? 0;
+      int maxQ = detail?.maxQuantity ?? minQ;
+
+      // 4️⃣ Apply progression (only if week > 1)
+      if (weekNumber > 1) {
+        final prevWeek = weekNumber - 1;
+
+        final prevLogs = await supabase
+            .from('progress_logs')
+            .select('reps_completed')
+            .eq('program_id', programId)
+            .eq('exercise_id', pe['exercise_id'])
+            .eq('week_number', prevWeek)
+            .eq('day_number', dayNumber)
+            .eq('user_id', userId);
+
+        if (prevLogs.isNotEmpty) {
+          final bestReps = prevLogs
+              .map((e) => e['reps_completed'] as int)
+              .reduce((a, b) => a > b ? a : b);
+
+          // 📈 Progression rule
+          if (bestReps >= maxQ) {
+            minQ += 1;
+            maxQ += 1;
+          }
+        }
+      }
+
+      // 5️⃣ Merge everything
       final merged = {
         ...exerciseInfo,
         'program_exercise_id': pe['id'],
         'sets': detail?.sets ?? 1,
-        'min_quantity': detail?.minQuantity ?? 0,
-        'max_quantity': detail?.maxQuantity ?? detail?.minQuantity ?? 0,
+        'min_quantity': minQ,
+        'max_quantity': maxQ,
         'duration_type': detail?.durationType ?? 'reps',
         'is_superset': detail?.isSuperset ?? false,
         'has_alternative': detail?.hasAlternative ?? false,
