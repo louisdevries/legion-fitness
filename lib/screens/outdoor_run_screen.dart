@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:flutter_background/flutter_background.dart';
 
 class OutdoorRunScreen extends StatefulWidget {
   const OutdoorRunScreen({super.key});
@@ -13,17 +14,14 @@ class OutdoorRunScreen extends StatefulWidget {
 
 class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
   final MapController mapController = MapController();
-
   StreamSubscription<Position>? positionStream;
 
   bool isRunning = false;
   bool isPaused = false;
 
   List<LatLng> routePoints = [];
-
   double totalDistanceMeters = 0;
   int elapsedSeconds = 0;
-
   Timer? timer;
 
   LatLng? currentPosition;
@@ -56,7 +54,23 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
     });
   }
 
-  void startRun() {
+  Future<void> startBackgroundMode() async {
+    final androidConfig = FlutterBackgroundAndroidConfig(
+      notificationTitle: "Outdoor Run",
+      notificationText: "Tracking your run in the background",
+      notificationImportance: AndroidNotificationImportance.normal,
+      enableWifiLock: true,
+    );
+
+    await FlutterBackground.initialize(androidConfig: androidConfig);
+    await FlutterBackground.enableBackgroundExecution();
+  }
+
+
+
+  void startRun() async {
+    await startBackgroundMode(); // start background tracking
+
     setState(() {
       isRunning = true;
       isPaused = false;
@@ -65,20 +79,20 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
       routePoints.clear();
     });
 
+    // Timer for elapsed seconds
     timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!isPaused) {
         setState(() => elapsedSeconds++);
       }
     });
 
+    // Location stream (runs even when app is backgrounded)
     positionStream = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.bestForNavigation,
         distanceFilter: 3,
       ),
     ).listen((pos) {
-      if (isPaused) return;
-
       final newPoint = LatLng(pos.latitude, pos.longitude);
 
       if (routePoints.isNotEmpty) {
@@ -92,12 +106,14 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
         totalDistanceMeters += d;
       }
 
-      setState(() {
-        routePoints.add(newPoint);
-        currentPosition = newPoint;
-      });
+      routePoints.add(newPoint);
+      currentPosition = newPoint;
 
-      mapController.move(newPoint, mapController.camera.zoom);
+      // Only update map if screen is active
+      if (mounted) {
+        setState(() {});
+        mapController.move(newPoint, mapController.camera.zoom);
+      }
     });
   }
 
@@ -108,6 +124,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
   void stopRun() {
     timer?.cancel();
     positionStream?.cancel();
+    FlutterBackground.disableBackgroundExecution(); // stop foreground service
 
     setState(() {
       isRunning = false;
@@ -127,6 +144,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
   void dispose() {
     timer?.cancel();
     positionStream?.cancel();
+    FlutterBackground.disableBackgroundExecution();
     super.dispose();
   }
 
@@ -142,7 +160,6 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
     final pace = km > 0 ? elapsedSeconds / 60 / km : 0;
 
     return Scaffold(
-
       body: Column(
         children: [
           // 🗺️ MAP
@@ -173,7 +190,11 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                       point: currentPosition!,
                       width: 40,
                       height: 40,
-                      child: const Icon(Icons.my_location, color: Colors.red, size: 36),
+                      child: const Icon(
+                        Icons.my_location,
+                        color: Colors.red,
+                        size: 36,
+                      ),
                     ),
                   ],
                 ),
@@ -190,36 +211,43 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
               children: [
                 statBox("Time", formatTime(elapsedSeconds)),
                 statBox("Distance", "${km.toStringAsFixed(2)} km"),
-                statBox("Pace", pace == 0 ? "--" : "${pace.toStringAsFixed(1)} min/km"),
+                statBox(
+                    "Pace",
+                    pace == 0
+                        ? "--"
+                        : "${pace.toStringAsFixed(1)} min/km"),
               ],
             ),
           ),
 
-          // 🎮 CONTROLS
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                if (!isRunning)
-                  ElevatedButton(
-                    onPressed: startRun,
-                    child: const Text("Start"),
-                  )
-                else ...[
+          // 🎮 CONTROLS (LOCK UI WHILE RUNNING)
+          if (!isRunning)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: ElevatedButton(
+                onPressed: startRun,
+                child: const Text("Start"),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
                   ElevatedButton(
                     onPressed: pauseRun,
                     child: Text(isPaused ? "Resume" : "Pause"),
                   ),
                   ElevatedButton(
                     onPressed: stopRun,
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                    style:
+                    ElevatedButton.styleFrom(backgroundColor: Colors.red),
                     child: const Text("Stop"),
                   ),
-                ]
-              ],
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -230,7 +258,9 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
       children: [
         Text(label, style: const TextStyle(color: Colors.white70)),
         const SizedBox(height: 4),
-        Text(value, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+        Text(value,
+            style: const TextStyle(
+                color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
       ],
     );
   }

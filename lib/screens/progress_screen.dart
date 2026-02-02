@@ -1,5 +1,9 @@
+import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/progress_log.dart';
@@ -14,393 +18,404 @@ class ProgressScreen extends StatefulWidget {
   State<ProgressScreen> createState() => _ProgressScreenState();
 }
 
-class _ProgressScreenState extends State<ProgressScreen> {
+class _ProgressScreenState extends State<ProgressScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
   bool isLoading = true;
 
   List<ProgressLog> logs = [];
   List<Exercise> exercises = [];
   Exercise? selectedExercise;
+
   List<_WeightLog> weightLogs = [];
-  Set<DateTime> exerciseDates = {};
+
+  // ================= PHOTOS =================
+  List<ProgressPhoto> photos = [];
+
+  final ImagePicker _picker = ImagePicker();
+
+  DateTime currentMonth =
+  DateTime(DateTime.now().year, DateTime.now().month);
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 3, vsync: this)
+      ..addListener(() => setState(() {}));
     loadData();
+    loadLocalPhotos();
   }
 
+  // ================= DATA =================
   Future<void> loadData() async {
     setState(() => isLoading = true);
-    try {
-      final programLogs = await ProgressService.getUserProgress(1);
-      final exerciseList = await ExerciseService.getAllExercises();
 
-      final user = Supabase.instance.client.auth.currentUser;
-      List<Map<String, dynamic>> weightData = [];
-      if (user != null) {
-        weightData = await Supabase.instance.client
-            .from('weight_logs')
-            .select()
-            .eq('user_id', user.id) as List<Map<String, dynamic>>;
-      }
+    final programLogs = await ProgressService.getUserProgress(1);
+    final exerciseList = await ExerciseService.getAllExercises();
 
-      final weights = weightData.map((e) {
+    final user = Supabase.instance.client.auth.currentUser;
+    List<_WeightLog> weights = [];
+
+    if (user != null) {
+      final data = await Supabase.instance.client
+          .from('weight_logs')
+          .select()
+          .eq('user_id', user.id)
+          .order('logged_at');
+
+      weights = data.map<_WeightLog>((e) {
         return _WeightLog(
           date: DateTime.parse(e['logged_at']),
           weight: (e['weight_kg'] as num).toDouble(),
         );
       }).toList();
+    }
 
-      final dates = programLogs.map((log) {
-        return DateTime(log.date.year, log.date.month, log.date.day);
-      }).toSet();
+    setState(() {
+      logs = programLogs;
+      exercises = exerciseList;
+      weightLogs = weights;
+      if (exercises.isNotEmpty) selectedExercise = exercises.first;
+      isLoading = false;
+    });
+  }
 
-      setState(() {
-        logs = programLogs;
-        exercises = exerciseList;
-        weightLogs = weights;
-        exerciseDates = dates;
+  // ================= PHOTO STORAGE =================
+  Future<Directory> _photoDir() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final d = Directory('${dir.path}/progress_photos');
+    if (!d.existsSync()) d.createSync(recursive: true);
+    return d;
+  }
 
-        if (logs.isNotEmpty && exercises.isNotEmpty) {
-          selectedExercise =
-              exercises.firstWhere((ex) => ex.id == logs.first.exerciseId);
-        }
-      });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load progress: $e')),
+  Future<void> loadLocalPhotos() async {
+    final dir = await _photoDir();
+    final metaFile = File('${dir.path}/meta.json');
+    if (!metaFile.existsSync()) return;
+
+    final data = jsonDecode(await metaFile.readAsString()) as List;
+    setState(() {
+      photos = data
+          .map((e) => ProgressPhoto(
+        file: File(e['path']),
+        date: DateTime.parse(e['date']),
+        weight: e['weight']?.toDouble(),
+      ))
+          .toList();
+    });
+  }
+
+  Future<void> _savePhotoMeta() async {
+    final dir = await _photoDir();
+    final metaFile = File('${dir.path}/meta.json');
+
+    await metaFile.writeAsString(jsonEncode(
+      photos
+          .map((p) => {
+        'path': p.file.path,
+        'date': p.date.toIso8601String(),
+        'weight': p.weight,
+      })
+          .toList(),
+    ));
+  }
+
+  Future<void> addPhoto() async {
+    final picked = await _picker.pickImage(source: ImageSource.camera);
+    if (picked == null) return;
+
+    double? weight;
+
+    await showDialog(
+      context: context,
+      builder: (_) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: const Text('Add weight (optional)'),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(suffixText: 'kg'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                if (controller.text.isNotEmpty) {
+                  weight = double.tryParse(controller.text);
+                }
+                Navigator.pop(context);
+              },
+              child: const Text('Save'),
+            )
+          ],
         );
-      }
-    } finally {
-      setState(() => isLoading = false);
-    }
+      },
+    );
+
+    final dir = await _photoDir();
+    final file =
+    File('${dir.path}/${DateTime.now().millisecondsSinceEpoch}.jpg');
+    await File(picked.path).copy(file.path);
+
+    photos.add(
+      ProgressPhoto(
+        file: file,
+        date: DateTime.now(),
+        weight: weight,
+      ),
+    );
+
+    await _savePhotoMeta();
+    setState(() {});
   }
 
-  List<_DayProgress> _aggregatePerDay(List<ProgressLog> logs, int exerciseId) {
-    final Map<DateTime, double> repsPerDay = {};
-    for (final log in logs) {
-      if (log.exerciseId != exerciseId) continue;
-      final day = DateTime(log.date.year, log.date.month, log.date.day);
-      repsPerDay[day] = log.repsCompleted.toDouble();
-    }
-    final result = repsPerDay.entries
-        .map((e) => _DayProgress(date: e.key, value: e.value))
-        .toList();
-    result.sort((a, b) => a.date.compareTo(b.date));
-    return result;
-  }
-
-  List<_WeightLog> _sortedWeights() {
-    final sorted = List<_WeightLog>.from(weightLogs);
-    sorted.sort((a, b) => a.date.compareTo(b.date));
-    return sorted;
-  }
-
+  // ================= UI =================
   @override
   Widget build(BuildContext context) {
-    if (isLoading) return const Center(child: CircularProgressIndicator());
+    if (isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Progress'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Overview'),
+            Tab(text: 'Exercises'),
+            Tab(text: 'Photos'),
+          ],
+        ),
+      ),
+      floatingActionButton: _tabController.index == 2
+          ? FloatingActionButton(
+        onPressed: addPhoto,
+        child: const Icon(Icons.camera_alt),
+      )
+          : null,
+      floatingActionButtonLocation:
+      FloatingActionButtonLocation.centerFloat,
+      body: TabBarView(
+        controller: _tabController,
         children: [
-          // =================== WEIGHT CHART ===================
-          const Text("Weight Progress",
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
-          weightLogs.isEmpty
-              ? const Text("No weight logs yet.")
-              : _stylizedLineChart(
-            spots: _sortedWeights()
-                .asMap()
-                .entries
-                .map((e) => FlSpot(e.key.toDouble(), e.value.weight))
-                .toList(),
-            minY: _sortedWeights()
-                .map((e) => e.weight)
-                .reduce((a, b) => a < b ? a : b) -
-                1,
-            maxY: _sortedWeights()
-                .map((e) => e.weight)
-                .reduce((a, b) => a > b ? a : b) +
-                1,
-            labels: _sortedWeights()
-                .map((e) => "${e.date.day}/${_monthName(e.date.month)}")
-                .toList(),
-          ),
-          const SizedBox(height: 24),
-
-          // =================== EXERCISE CALENDAR ===================
-          const Text("Exercise Calendar",
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
-          _stylizedExerciseCalendar(),
-          const SizedBox(height: 24),
-
-          // =================== EXERCISE PROGRESS ===================
-          const Text("Exercise Progress",
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
-          DropdownButton<Exercise>(
-            value: selectedExercise,
-            items: exercises
-                .map(
-                  (ex) => DropdownMenuItem<Exercise>(
-                value: ex,
-                child: Text(ex.name),
-              ),
-            )
-                .toList(),
-            onChanged: (value) {
-              setState(() => selectedExercise = value);
-            },
-          ),
-          const SizedBox(height: 12),
-          if (selectedExercise != null)
-            _stylizedLineChart(
-              spots: _aggregatePerDay(logs, selectedExercise!.id)
-                  .asMap()
-                  .entries
-                  .map((e) => FlSpot(e.key.toDouble(), e.value.value))
-                  .toList(),
-              minY: _aggregatePerDay(logs, selectedExercise!.id)
-                  .map((e) => e.value)
-                  .reduce((a, b) => a < b ? a : b) -
-                  1,
-              maxY: _aggregatePerDay(logs, selectedExercise!.id)
-                  .map((e) => e.value)
-                  .reduce((a, b) => a > b ? a : b) +
-                  1,
-              labels: _aggregatePerDay(logs, selectedExercise!.id)
-                  .map((e) => "${e.date.day}/${_monthName(e.date.month)}")
-                  .toList(),
-            ),
+          _overviewTab(),
+          _exerciseTab(),
+          _photosTab(),
         ],
       ),
     );
   }
 
-  // =================== MODERN LINE CHART ===================
-  Widget _stylizedLineChart({
-    required List<FlSpot> spots,
-    required double minY,
-    required double maxY,
-    required List<String> labels,
-  }) {
-    return SizedBox(
-      height: 200,
-      child: LineChart(
-        LineChartData(
-          minY: minY,
-          maxY: maxY,
-          lineBarsData: [
-            LineChartBarData(
-              spots: spots,
-              isCurved: true,
-              gradient: LinearGradient(
-                colors: [
-                  Colors.purpleAccent,
-                  Colors.deepPurpleAccent,
-                  Colors.indigoAccent,
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              barWidth: 4,
-              isStrokeCapRound: true,
-              dotData: FlDotData(
-                show: true,
-                getDotPainter: (spot, percent, barData, index) =>
-                    FlDotCirclePainter(
-                      radius: 6,
-                      color: Colors.deepPurpleAccent,
-                      strokeWidth: 2,
-                      strokeColor: Colors.white,
-                    ),
-              ),
-              belowBarData: BarAreaData(
-                show: true,
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.purpleAccent.withOpacity(0.4),
-                    Colors.transparent,
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-            ),
-          ],
-          titlesData: FlTitlesData(
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (value, meta) {
-                  final index = value.toInt();
-                  if (index < 0 || index >= labels.length) return const SizedBox();
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: Text(
-                      labels[index],
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                  );
-                },
-              ),
-            ),
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 40,
-                interval: 2,
-                getTitlesWidget: (val, meta) => Text(val.toInt().toString()),
-              ),
-            ),
-          ),
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: false,
-            horizontalInterval: 2,
-          ),
-          borderData: FlBorderData(show: false),
-          lineTouchData: LineTouchData(
-            handleBuiltInTouches: true,
-            touchTooltipData: LineTouchTooltipData(
-              getTooltipItems: (spots) {
-                return spots.map((spot) {
-                  return LineTooltipItem(
-                    spot.y.toStringAsFixed(1),
-                    const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  );
-                }).toList();
-              },
-              tooltipPadding: const EdgeInsets.symmetric(
-                  horizontal: 8, vertical: 4),
-              tooltipMargin: 6,
+  // ================= OVERVIEW =================
+  Widget _overviewTab() {
+    if (weightLogs.isEmpty) {
+      return const Center(child: Text('No weight data yet'));
+    }
+
+    final sorted = [...weightLogs]..sort((a, b) => a.date.compareTo(b.date));
+
+    final min = sorted.map((e) => e.weight).reduce((a, b) => a < b ? a : b);
+    final max = sorted.map((e) => e.weight).reduce((a, b) => a > b ? a : b);
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text(
+          'Weight Progress',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        Text(
+            'Min: ${min.toStringAsFixed(1)} kg • Max: ${max.toStringAsFixed(1)} kg'),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 220,
+          child: LineChart(
+            LineChartData(
+              borderData: FlBorderData(show: false),
+              lineBarsData: [
+                LineChartBarData(
+                  spots: sorted
+                      .asMap()
+                      .entries
+                      .map((e) =>
+                      FlSpot(e.key.toDouble(), e.value.weight))
+                      .toList(),
+                  isCurved: true,
+                  barWidth: 4,
+                  dotData: FlDotData(show: true),
+                )
+              ],
             ),
           ),
         ),
+      ]),
+    );
+  }
+
+  // ================= EXERCISES =================
+  Widget _exerciseTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              '${_monthName(currentMonth.month)} ${currentMonth.year}',
+              style:
+              const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            Row(children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed: () => setState(() {
+                  currentMonth = DateTime(
+                      currentMonth.year, currentMonth.month - 1);
+                }),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: () => setState(() {
+                  currentMonth = DateTime(
+                      currentMonth.year, currentMonth.month + 1);
+                }),
+              ),
+            ])
+          ],
+        ),
+        const SizedBox(height: 12),
+        _exerciseCalendar(),
+      ]),
+    );
+  }
+
+  Widget _exerciseCalendar() {
+    final daysInMonth =
+    DateUtils.getDaysInMonth(currentMonth.year, currentMonth.month);
+
+    final monthLogs = logs.where((l) =>
+    l.date.year == currentMonth.year &&
+        l.date.month == currentMonth.month);
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: List.generate(daysInMonth, (i) {
+        final day =
+        DateTime(currentMonth.year, currentMonth.month, i + 1);
+
+        final dayLogs = monthLogs.where((l) =>
+        l.date.year == day.year &&
+            l.date.month == day.month &&
+            l.date.day == day.day);
+
+        final active = dayLogs.isNotEmpty;
+        final isToday = DateUtils.isSameDay(day, DateTime.now());
+
+        return GestureDetector(
+          onTap:
+          active ? () => _showWorkoutDetails(day, dayLogs.toList()) : null,
+          child: Container(
+            width: 40,
+            height: 40,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: active ? Colors.deepPurple : Colors.grey[300],
+              borderRadius: BorderRadius.circular(10),
+              border: isToday
+                  ? Border.all(color: Colors.deepPurple, width: 2)
+                  : null,
+            ),
+            child: Text(
+              '${day.day}',
+              style: TextStyle(
+                  color: active ? Colors.white : Colors.black54,
+                  fontWeight: FontWeight.bold),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  void _showWorkoutDetails(DateTime day, List<ProgressLog> dayLogs) {
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${day.day} ${_monthName(day.month)}',
+                style:
+                const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              ...dayLogs.map((l) => ListTile(
+                leading: const Icon(Icons.fitness_center),
+                title: Text('Program ID: ${l.programId}'),
+                subtitle:
+                Text('Week ${l.weekNumber} • Day ${l.dayNumber}'),
+              )),
+            ]),
       ),
     );
   }
 
-  // =================== MODERN EXERCISE CALENDAR ===================
-  Widget _stylizedExerciseCalendar() {
-    final now = DateTime.now();
-    final start = now.subtract(const Duration(days: 29));
+  String _monthName(int m) => const [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December'
+  ][m - 1];
 
-    // Count reps per day for heatmap coloring
-    final Map<DateTime, int> repsPerDay = {};
-    for (final log in logs) {
-      final day = DateTime(log.date.year, log.date.month, log.date.day);
-      repsPerDay[day] = (repsPerDay[day] ?? 0) + log.repsCompleted;
+  // ================= PHOTOS =================
+  Widget _photosTab() {
+    if (photos.isEmpty) {
+      return const Center(
+        child: Text('No progress photos yet\nTap the camera below',
+            textAlign: TextAlign.center),
+      );
     }
 
-    // Group days by month for labeling
-    final Map<String, List<DateTime>> monthGroups = {};
-    for (int i = 0; i < 30; i++) {
-      final day = start.add(Duration(days: i));
-      final monthKey = "${day.year}-${day.month.toString().padLeft(2, '0')}";
-      monthGroups.putIfAbsent(monthKey, () => []).add(day);
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: monthGroups.entries.map((entry) {
-        final monthLabel = DateTime.parse("${entry.key}-01");
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Text(
-                "${_monthName(monthLabel.month)} ${monthLabel.year}",
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-            ),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: entry.value.map((day) {
-                final reps = repsPerDay[day] ?? 0;
-                final exercised = reps > 0;
-
-                final color = exercised
-                    ? Color.lerp(
-                    Colors.purple[200], Colors.deepPurpleAccent,
-                    (reps / 20).clamp(0, 1))
-                    : Colors.grey[200];
-
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 400),
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: BorderRadius.circular(12),
-                    border: exercised
-                        ? Border.all(
-                      color: Colors.deepPurpleAccent,
-                      width: 2,
-                    )
-                        : null,
-                    boxShadow: exercised
-                        ? [
-                      BoxShadow(
-                          color: Colors.deepPurpleAccent
-                              .withOpacity(0.3),
-                          blurRadius: 6,
-                          offset: const Offset(0, 3))
-                    ]
-                        : [],
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    "${day.day}",
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: exercised ? Colors.white : Colors.black54,
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
-        );
-      }).toList(),
+    return GridView.builder(
+      padding: const EdgeInsets.all(12),
+      gridDelegate:
+      const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+      ),
+      itemCount: photos.length,
+      itemBuilder: (_, i) {
+        return Image.file(photos[i].file, fit: BoxFit.cover);
+      },
     );
-  }
-
-  String _monthName(int month) {
-    const names = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec'
-    ];
-    return names[month - 1];
   }
 }
 
-class _DayProgress {
+// ================= MODELS =================
+class ProgressPhoto {
+  final File file;
   final DateTime date;
-  final double value;
-  _DayProgress({required this.date, required this.value});
+  final double? weight;
+
+  ProgressPhoto({required this.file, required this.date, this.weight});
 }
 
 class _WeightLog {
