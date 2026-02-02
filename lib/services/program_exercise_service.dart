@@ -7,17 +7,17 @@ final supabase = Supabase.instance.client;
 class ProgramExerciseService {
   static Future<List<Map<String, dynamic>>> fetchExercisesForDay({
     required int programId,
-    required int weekNumber,
+    required int weekNumber, // still used for progression + logging
     required int dayNumber,
   }) async {
     final userId = supabase.auth.currentUser!.id;
 
-    // 1️⃣ Fetch program exercises for selected week/day
+    // ✅ ALWAYS fetch exercises from WEEK 1 TEMPLATE
     final data = await supabase
         .from('program_exercises')
         .select()
         .eq('program_id', programId)
-        .eq('week_number', weekNumber)
+        .eq('week_number', 1) // 🔑 FIX: week 1 only
         .eq('day_number', dayNumber);
 
     final programExercises = List<Map<String, dynamic>>.from(data);
@@ -41,7 +41,7 @@ class ProgramExerciseService {
       int minQ = detail?.minQuantity ?? 0;
       int maxQ = detail?.maxQuantity ?? minQ;
 
-      // 4️⃣ Apply progression (only if week > 1)
+      // 4️⃣ Apply progression (based on PREVIOUS WEEK LOGS)
       if (weekNumber > 1) {
         final prevWeek = weekNumber - 1;
 
@@ -59,7 +59,7 @@ class ProgramExerciseService {
               .map((e) => e['reps_completed'] as int)
               .reduce((a, b) => a > b ? a : b);
 
-          // 📈 Progression rule
+          // 📈 Simple progression rule
           if (bestReps >= maxQ) {
             minQ += 1;
             maxQ += 1;
@@ -67,7 +67,7 @@ class ProgramExerciseService {
         }
       }
 
-      // 5️⃣ Merge everything
+      // 5️⃣ Merge everything into runner-friendly structure
       final merged = {
         ...exerciseInfo,
         'program_exercise_id': pe['id'],
