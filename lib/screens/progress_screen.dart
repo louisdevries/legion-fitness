@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/progress_log.dart';
 import '../models/exercise.dart';
+import '../models/programs.dart';
 import '../services/progress_service.dart';
 import '../services/exercise_service.dart';
 
@@ -26,23 +27,25 @@ class _ProgressScreenState extends State<ProgressScreen>
 
   List<ProgressLog> logs = [];
   List<Exercise> exercises = [];
-  Exercise? selectedExercise;
+  List<Program> programs = [];
+  Map<int, Program> programMap = {};
 
   List<_WeightLog> weightLogs = [];
-
-  // ================= PHOTOS =================
-  List<ProgressPhoto> photos = [];
-
-  final ImagePicker _picker = ImagePicker();
 
   DateTime currentMonth =
   DateTime(DateTime.now().year, DateTime.now().month);
 
+  DateTime? selectedDay;
+  List<ProgressLog> selectedDayLogs = [];
+
+  // ================= PHOTOS =================
+  List<ProgressPhoto> photos = [];
+  final ImagePicker _picker = ImagePicker();
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this)
-      ..addListener(() => setState(() {}));
+    _tabController = TabController(length: 3, vsync: this);
     loadData();
     loadLocalPhotos();
   }
@@ -54,6 +57,15 @@ class _ProgressScreenState extends State<ProgressScreen>
     final programLogs = await ProgressService.getUserProgress(1);
     final exerciseList = await ExerciseService.getAllExercises();
 
+    final programData = await Supabase.instance.client
+        .from('fitness_programs')
+        .select();
+
+    final loadedPrograms =
+    programData.map<Program>((p) => Program.fromMap(p)).toList();
+
+    programMap = {for (final p in loadedPrograms) p.id: p};
+
     final user = Supabase.instance.client.auth.currentUser;
     List<_WeightLog> weights = [];
 
@@ -64,21 +76,29 @@ class _ProgressScreenState extends State<ProgressScreen>
           .eq('user_id', user.id)
           .order('logged_at');
 
-      weights = data.map<_WeightLog>((e) {
-        return _WeightLog(
-          date: DateTime.parse(e['logged_at']),
-          weight: (e['weight_kg'] as num).toDouble(),
-        );
-      }).toList();
+      weights = data
+          .map<_WeightLog>((e) => _WeightLog(
+        date: DateTime.parse(e['logged_at']),
+        weight: (e['weight_kg'] as num).toDouble(),
+      ))
+          .toList();
     }
 
     setState(() {
       logs = programLogs;
       exercises = exerciseList;
+      programs = loadedPrograms;
       weightLogs = weights;
-      if (exercises.isNotEmpty) selectedExercise = exercises.first;
       isLoading = false;
     });
+  }
+
+  // ================= HELPERS =================
+  bool _isToday(DateTime day) {
+    final now = DateTime.now();
+    return day.year == now.year &&
+        day.month == now.month &&
+        day.day == now.day;
   }
 
   // ================= PHOTO STORAGE =================
@@ -125,47 +145,12 @@ class _ProgressScreenState extends State<ProgressScreen>
     final picked = await _picker.pickImage(source: ImageSource.camera);
     if (picked == null) return;
 
-    double? weight;
-
-    await showDialog(
-      context: context,
-      builder: (_) {
-        final controller = TextEditingController();
-        return AlertDialog(
-          title: const Text('Add weight (optional)'),
-          content: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(suffixText: 'kg'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                if (controller.text.isNotEmpty) {
-                  weight = double.tryParse(controller.text);
-                }
-                Navigator.pop(context);
-              },
-              child: const Text('Save'),
-            )
-          ],
-        );
-      },
-    );
-
     final dir = await _photoDir();
     final file =
     File('${dir.path}/${DateTime.now().millisecondsSinceEpoch}.jpg');
     await File(picked.path).copy(file.path);
 
-    photos.add(
-      ProgressPhoto(
-        file: file,
-        date: DateTime.now(),
-        weight: weight,
-      ),
-    );
-
+    photos.add(ProgressPhoto(file: file, date: DateTime.now()));
     await _savePhotoMeta();
     setState(() {});
   }
@@ -197,8 +182,6 @@ class _ProgressScreenState extends State<ProgressScreen>
         child: const Icon(Icons.camera_alt),
       )
           : null,
-      floatingActionButtonLocation:
-      FloatingActionButtonLocation.centerFloat,
       body: TabBarView(
         controller: _tabController,
         children: [
@@ -218,9 +201,6 @@ class _ProgressScreenState extends State<ProgressScreen>
 
     final sorted = [...weightLogs]..sort((a, b) => a.date.compareTo(b.date));
 
-    final min = sorted.map((e) => e.weight).reduce((a, b) => a < b ? a : b);
-    final max = sorted.map((e) => e.weight).reduce((a, b) => a > b ? a : b);
-
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -228,9 +208,6 @@ class _ProgressScreenState extends State<ProgressScreen>
           'Weight Progress',
           style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
         ),
-        const SizedBox(height: 8),
-        Text(
-            'Min: ${min.toStringAsFixed(1)} kg • Max: ${max.toStringAsFixed(1)} kg'),
         const SizedBox(height: 16),
         SizedBox(
           height: 220,
@@ -247,7 +224,6 @@ class _ProgressScreenState extends State<ProgressScreen>
                       .toList(),
                   isCurved: true,
                   barWidth: 4,
-                  dotData: FlDotData(show: true),
                 )
               ],
             ),
@@ -262,45 +238,48 @@ class _ProgressScreenState extends State<ProgressScreen>
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              '${_monthName(currentMonth.month)} ${currentMonth.year}',
-              style:
-              const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            Row(children: [
-              IconButton(
-                icon: const Icon(Icons.chevron_left),
-                onPressed: () => setState(() {
-                  currentMonth = DateTime(
-                      currentMonth.year, currentMonth.month - 1);
-                }),
-              ),
-              IconButton(
-                icon: const Icon(Icons.chevron_right),
-                onPressed: () => setState(() {
-                  currentMonth = DateTime(
-                      currentMonth.year, currentMonth.month + 1);
-                }),
-              ),
-            ])
-          ],
-        ),
+        _monthHeader(),
         const SizedBox(height: 12),
         _exerciseCalendar(),
+        const SizedBox(height: 20),
+        if (selectedDay != null) _selectedDayDetails(),
       ]),
+    );
+  }
+
+  Widget _monthHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          '${_monthName(currentMonth.month)} ${currentMonth.year}',
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        Row(children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            onPressed: () => setState(() {
+              currentMonth =
+                  DateTime(currentMonth.year, currentMonth.month - 1);
+              selectedDay = null;
+            }),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            onPressed: () => setState(() {
+              currentMonth =
+                  DateTime(currentMonth.year, currentMonth.month + 1);
+              selectedDay = null;
+            }),
+          ),
+        ])
+      ],
     );
   }
 
   Widget _exerciseCalendar() {
     final daysInMonth =
     DateUtils.getDaysInMonth(currentMonth.year, currentMonth.month);
-
-    final monthLogs = logs.where((l) =>
-    l.date.year == currentMonth.year &&
-        l.date.month == currentMonth.month);
 
     return Wrap(
       spacing: 6,
@@ -309,23 +288,29 @@ class _ProgressScreenState extends State<ProgressScreen>
         final day =
         DateTime(currentMonth.year, currentMonth.month, i + 1);
 
-        final dayLogs = monthLogs.where((l) =>
+        final dayLogs = logs.where((l) =>
         l.date.year == day.year &&
             l.date.month == day.month &&
             l.date.day == day.day);
 
-        final active = dayLogs.isNotEmpty;
-        final isToday = DateUtils.isSameDay(day, DateTime.now());
+        final hasLogs = dayLogs.isNotEmpty;
+        final isToday = _isToday(day);
 
         return GestureDetector(
-          onTap:
-          active ? () => _showWorkoutDetails(day, dayLogs.toList()) : null,
+          onTap: hasLogs
+              ? () {
+            setState(() {
+              selectedDay = day;
+              selectedDayLogs = dayLogs.toList();
+            });
+          }
+              : null,
           child: Container(
             width: 40,
             height: 40,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: active ? Colors.deepPurple : Colors.grey[300],
+              color: hasLogs ? Colors.deepPurple : Colors.grey[300],
               borderRadius: BorderRadius.circular(10),
               border: isToday
                   ? Border.all(color: Colors.deepPurple, width: 2)
@@ -334,8 +319,9 @@ class _ProgressScreenState extends State<ProgressScreen>
             child: Text(
               '${day.day}',
               style: TextStyle(
-                  color: active ? Colors.white : Colors.black54,
-                  fontWeight: FontWeight.bold),
+                color: hasLogs ? Colors.white : Colors.black54,
+                fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
+              ),
             ),
           ),
         );
@@ -343,53 +329,77 @@ class _ProgressScreenState extends State<ProgressScreen>
     );
   }
 
-  void _showWorkoutDetails(DateTime day, List<ProgressLog> dayLogs) {
-    showModalBottomSheet(
-      context: context,
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${day.day} ${_monthName(day.month)}',
-                style:
-                const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+  Widget _selectedDayDetails() {
+    final uniqueSessions = {
+      for (var l in selectedDayLogs)
+        '${l.programId}-${l.weekNumber}-${l.dayNumber}': l
+    }.values.toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${selectedDay!.day} ${_monthName(selectedDay!.month)}',
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        ...uniqueSessions.map((l) {
+          final program = programMap[l.programId];
+
+          return Container(
+            height: 120,
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              image: program != null
+                  ? DecorationImage(
+                image: NetworkImage(program.imageUrl),
+                fit: BoxFit.cover,
+                colorFilter: ColorFilter.mode(
+                  Colors.black.withOpacity(0.45),
+                  BlendMode.darken,
+                ),
+              )
+                  : null,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Align(
+                alignment: Alignment.bottomLeft,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      program?.name ?? 'Unknown program',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      'Week ${l.weekNumber} • Day ${l.dayNumber}',
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 12),
-              ...dayLogs.map((l) => ListTile(
-                leading: const Icon(Icons.fitness_center),
-                title: Text('Program ID: ${l.programId}'),
-                subtitle:
-                Text('Week ${l.weekNumber} • Day ${l.dayNumber}'),
-              )),
-            ]),
-      ),
+            ),
+          );
+        }),
+      ],
     );
   }
-
-  String _monthName(int m) => const [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December'
-  ][m - 1];
 
   // ================= PHOTOS =================
   Widget _photosTab() {
     if (photos.isEmpty) {
       return const Center(
-        child: Text('No progress photos yet\nTap the camera below',
-            textAlign: TextAlign.center),
+        child: Text(
+          'No progress photos yet\nTap the camera below',
+          textAlign: TextAlign.center,
+        ),
       );
     }
 
@@ -407,6 +417,21 @@ class _ProgressScreenState extends State<ProgressScreen>
       },
     );
   }
+
+  String _monthName(int m) => const [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December'
+  ][m - 1];
 }
 
 // ================= MODELS =================
@@ -421,5 +446,6 @@ class ProgressPhoto {
 class _WeightLog {
   final DateTime date;
   final double weight;
+
   _WeightLog({required this.date, required this.weight});
 }

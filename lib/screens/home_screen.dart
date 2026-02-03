@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'exercise_preview_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -9,88 +10,146 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  Map<int, bool> completedDays = {};
+class _HomeScreenState extends State<HomeScreen>
+    with SingleTickerProviderStateMixin {
+  final supabase = Supabase.instance.client;
+
   bool isLoading = true;
 
   int? programId;
-  int? weekNumber;
-  int? nextWorkoutDay;
+  int currentWeek = 1;
+
+  String? programName;
+  String? programImage;
+
+  Map<int, bool> completedDays = {};
+  int? nextWeek;
+  int? nextDay;
+
+  double programProgress = 0.0;
+  double weekProgress = 0.0;
+
+  late AnimationController _pulseController;
 
   @override
   void initState() {
     super.initState();
-    _loadActiveProgram();
+    _loadHomeData();
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
   }
 
-  // ---------------- Load active program from shared prefs ----------------
-  Future<void> _loadActiveProgram() async {
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadHomeData() async {
     final prefs = await SharedPreferences.getInstance();
     programId = prefs.getInt('active_program_id');
-    weekNumber = prefs.getInt('active_week_number');
+    currentWeek = prefs.getInt('active_week_number') ?? 1;
 
-    if (programId == null || weekNumber == null) {
+    final lastWeek = prefs.getInt('last_seen_week');
+    final nowWeek = _weekOfYear(DateTime.now());
+
+    if (lastWeek != nowWeek) {
+      currentWeek = 1;
+      await prefs.setInt('active_week_number', 1);
+      await prefs.setInt('last_seen_week', nowWeek);
+    }
+
+    if (programId == null) {
       setState(() => isLoading = false);
       return;
     }
 
-    await _loadWeekStatus();
+    await _loadProgramInfo();
+    await _loadProgress();
+    setState(() => isLoading = false);
   }
 
-  // ---------------- Load weekly progress from progress_logs ----------------
-  Future<void> _loadWeekStatus() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) {
-      setState(() => isLoading = false);
-      return;
+  Future<void> _loadProgramInfo() async {
+    final data = await supabase
+        .from('fitness_programs')
+        .select('name, image_url')
+        .eq('id', programId!)
+        .maybeSingle();
+
+    if (data != null) {
+      programName = data['name'];
+      programImage = data['image_url'];
+    }
+  }
+
+  Future<void> _loadProgress() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    final allExercises = await supabase
+        .from('program_exercises')
+        .select('week_number, day_number')
+        .eq('program_id', programId!);
+
+    final completedLogs = await supabase
+        .from('progress_logs')
+        .select('week_number, day_number')
+        .eq('user_id', user.id)
+        .eq('program_id', programId!);
+
+    final doneSet = <String>{};
+    for (final log in completedLogs as List) {
+      doneSet.add("${log['week_number']}-${log['day_number']}");
     }
 
-    Map<int, bool> temp = {};
+    programProgress =
+    allExercises.isNotEmpty ? doneSet.length / allExercises.length : 0.0;
 
-    // Check each day 1–7
-    for (int day = 1; day <= 7; day++) {
-      try {
-        final data = await Supabase.instance.client
-            .from('progress_logs')
-            .select('*')
-            .eq('user_id', user.id)
-            .eq('program_id', programId!)
-            .eq('week_number', weekNumber!)
-            .eq('day_number', day)
-            .limit(1); // only check if at least 1 row exists
-
-        temp[day] = (data as List).isNotEmpty; // true if logged
-      } catch (e) {
-        print('Exception fetching day $day: $e');
-        temp[day] = false;
-      }
-    }
-
-    // Determine next workout day
-    int? nextDay;
-    for (int day = 1; day <= 7; day++) {
-      if (temp[day] == false) {
-        nextDay = day;
+    nextWeek = null;
+    nextDay = null;
+    for (final e in allExercises as List) {
+      final key = "${e['week_number']}-${e['day_number']}";
+      if (!doneSet.contains(key)) {
+        nextWeek = e['week_number'];
+        nextDay = e['day_number'];
         break;
       }
     }
 
-    setState(() {
-      completedDays = temp;
-      nextWorkoutDay = nextDay;
-      isLoading = false;
-    });
+    completedDays.clear();
+    int totalDaysThisWeek = 0;
+    int completedDaysThisWeek = 0;
+    final weekdayToday = DateTime.now().weekday;
+
+    for (final e in allExercises) {
+      if (e['week_number'] == currentWeek) {
+        final dayNum = e['day_number'];
+        totalDaysThisWeek++;
+
+        final key = "${e['week_number']}-${dayNum}";
+        if (doneSet.contains(key) && dayNum < weekdayToday) {
+          completedDays[dayNum] = true;
+          completedDaysThisWeek++;
+        }
+      }
+    }
+
+    weekProgress = totalDaysThisWeek > 0
+        ? completedDaysThisWeek / totalDaysThisWeek
+        : 0.0;
   }
 
-  // ---------------- UI ----------------
   @override
   Widget build(BuildContext context) {
     if (isLoading) return const Center(child: CircularProgressIndicator());
 
-    if (programId == null || weekNumber == null) {
+    if (programId == null) {
       return const Center(
         child: Text(
-          "Select a program to get started 💪",
+          "Select or create a program to get started 💪",
           style: TextStyle(fontSize: 18),
         ),
       );
@@ -99,171 +158,270 @@ class _HomeScreenState extends State<HomeScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _greetingCard(),
-          const SizedBox(height: 16),
-          _nextWorkoutCard(),
-          const SizedBox(height: 16),
+          _resumeWorkoutBanner(),
+          const SizedBox(height: 20),
           _weeklyProgressCard(),
+          const SizedBox(height: 28),
+          _largeActionSection(
+            title: "Custom Programs",
+            description: "Build or manage your workout plans",
+            icon: Icons.fitness_center,
+            route: '/create-program',
+          ),
           const SizedBox(height: 16),
-          _quickActionsCard(),
+          _largeActionSection(
+            title: "Meal Suggestions",
+            description: "Nutrition to support your training",
+            icon: Icons.restaurant,
+            route: '/meal-suggestions',
+          ),
         ],
       ),
     );
   }
 
-  // ---------------- UI CARDS ----------------
-  Widget _greetingCard() {
-    return _card(
-      color: Colors.deepPurple.shade100,
-      height: 80,
-      child: const Center(
-        child: Text(
-          "Welcome back 💪 Let's get stronger today!",
-          style: TextStyle(fontSize: 18),
+  // -------------------- Active Program Banner --------------------
+  Widget _resumeWorkoutBanner() {
+    return GestureDetector(
+      onTap: nextDay == null
+          ? null
+          : () async {
+        final exercises = await supabase
+            .from('program_exercises')
+            .select('*')
+            .eq('program_id', programId!)
+            .eq('week_number', nextWeek!)
+            .eq('day_number', nextDay!)
+            .order('id')
+            .then((v) => v as List<Map<String, dynamic>>);
+
+        if (!mounted) return;
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ExercisePreviewScreen(
+              exercises: exercises,
+              programId: programId!,
+              weekNumber: nextWeek!,
+              dayNumber: nextDay!,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        height: 220,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 12,
+              offset: Offset(0, 6),
+            )
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (programImage != null)
+              Image.network(programImage!, fit: BoxFit.cover)
+            else
+              Container(color: Colors.grey.shade800),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.75),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    programName ?? '',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    programProgress >= 1.0
+                        ? "🎉 Program completed"
+                        : "Resume · Week $nextWeek Day $nextDay",
+                    style:
+                    const TextStyle(color: Colors.white70, fontSize: 14),
+                  ),
+                  const SizedBox(height: 10),
+                  LinearProgressIndicator(
+                    value: programProgress,
+                    backgroundColor: Colors.white24,
+                    color: Colors.greenAccent,
+                    minHeight: 6,
+                  ),
+                ],
+              ),
+            )
+          ],
         ),
       ),
     );
   }
 
-  Widget _nextWorkoutCard() {
-    return _card(
-      color: Colors.deepPurple.shade200,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "Next Workout",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          if (nextWorkoutDay == null)
-            const Text("🎉 Week completed!")
-          else ...[
-            Text("Week $weekNumber - Day $nextWorkoutDay"),
-            const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pushNamed(
-                  context,
-                  '/workout',
-                  arguments: {
-                    'programId': programId!,
-                    'weekNumber': weekNumber!,
-                    'dayNumber': nextWorkoutDay!,
-                  },
-                );
-              },
-              child: const Text("Start Workout"),
-            )
-          ],
-        ],
-      ),
-    );
-  }
-
+  // -------------------- Weekly Progress --------------------
   Widget _weeklyProgressCard() {
-    final today = DateTime.now().weekday;
+    const allDays = [1, 2, 3, 4, 5, 6, 7];
+    final weekdayToday = DateTime.now().weekday;
 
-    return _card(
-      color: Colors.deepPurple.shade300,
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blueGrey.shade900,
+        borderRadius: BorderRadius.circular(14),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
             "This Week",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            style: TextStyle(
+                fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
           ),
           const SizedBox(height: 12),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: List.generate(7, (i) {
-              final d = i + 1;
-              final done = completedDays[d] ?? false;
-              final isToday = d == today;
+            children: allDays.map((d) {
+              final done = completedDays[d] == true;
+              final isToday = d == weekdayToday;
+              final future = d > weekdayToday;
 
-              Color color = done
-                  ? Colors.green
-                  : isToday
-                  ? Colors.blue
-                  : Colors.grey;
-
-              return Column(
-                children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: color,
-                    child: done
-                        ? const Icon(Icons.check, color: Colors.white, size: 18)
-                        : Text(
-                      "$d",
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(_dayLabel(d), style: const TextStyle(fontSize: 12)),
-                ],
+              Widget circle = Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: done
+                      ? Colors.green
+                      : future
+                      ? Colors.grey.shade800
+                      : Colors.grey.shade700,
+                  border: isToday
+                      ? Border.all(color: Colors.blueAccent, width: 2)
+                      : null,
+                ),
+                child: Center(
+                  child: done
+                      ? const Icon(Icons.check,
+                      color: Colors.white, size: 20)
+                      : Text("$d",
+                      style:
+                      const TextStyle(color: Colors.white)),
+                ),
               );
-            }),
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget _quickActionsCard() {
-    return _card(
-      color: Colors.deepPurple.shade400,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "Quick Actions",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              if (isToday && !done) {
+                circle = AnimatedBuilder(
+                  animation: _pulseController,
+                  builder: (_, child) => Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.blueAccent.withOpacity(
+                              0.25 + (_pulseController.value * 0.25)),
+                          blurRadius:
+                          6 + (_pulseController.value * 6),
+                        )
+                      ],
+                    ),
+                    child: child,
+                  ),
+                  child: circle,
+                );
+              }
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Column(
+                  children: [
+                    circle,
+                    const SizedBox(height: 4),
+                    Text(_dayLabel(d),
+                        style: const TextStyle(
+                            fontSize: 12, color: Colors.white70)),
+                  ],
+                ),
+              );
+            }).toList(),
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              ElevatedButton.icon(
-                onPressed: () => Navigator.pushNamed(context, '/programs'),
-                icon: const Icon(Icons.fitness_center),
-                label: const Text("Programs"),
-              ),
-              ElevatedButton.icon(
-                onPressed: () {},
-                icon: const Icon(Icons.bar_chart),
-                label: const Text("Progress"),
-              ),
-              ElevatedButton.icon(
-                onPressed: () {},
-                icon: const Icon(Icons.settings),
-                label: const Text("Settings"),
-              ),
-            ],
-          )
+          LinearProgressIndicator(
+            value: weekProgress,
+            backgroundColor: Colors.white24,
+            color: Colors.lightGreenAccent,
+            minHeight: 6,
+          ),
         ],
       ),
     );
   }
 
-  // ---------------- Utility ----------------
-  Widget _card({required Widget child, Color? color, double? height}) {
-    return Container(
-      height: height,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(12),
+  // -------------------- Large Action Sections --------------------
+  Widget _largeActionSection({
+    required String title,
+    required String description,
+    required IconData icon,
+    required String route,
+  }) {
+    return GestureDetector(
+      onTap: () => Navigator.pushNamed(context, route),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.blueGrey.shade50,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 36, color: Colors.black87),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text(description,
+                      style: const TextStyle(color: Colors.black54)),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios, size: 16),
+          ],
+        ),
       ),
-      child: child,
     );
   }
 
   String _dayLabel(int d) {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return days[d - 1];
+  }
+
+  int _weekOfYear(DateTime date) {
+    final firstDay = DateTime(date.year, 1, 1);
+    return ((date.difference(firstDay).inDays + firstDay.weekday) / 7).ceil();
   }
 }
