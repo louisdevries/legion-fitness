@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/programs.dart';
 import '../services/program_service.dart';
-import 'week_day_selector_screen.dart'; // ✅ updated import
+import 'week_day_selector_screen.dart';
 
 class ProgramsScreen extends StatelessWidget {
   const ProgramsScreen({super.key});
@@ -28,13 +27,8 @@ class ProgramsScreen extends StatelessWidget {
             final program = programs[index];
 
             return GestureDetector(
-              onTap: () async {
-                // Save active program
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.setInt('active_program_id', program.id);
-                await prefs.setInt('active_week_number', 1);
-
-                // Navigate to WeekDaySelectorScreen
+              onTap: () {
+                // ✅ ONLY navigate – do NOT activate
                 Navigator.push(
                   context,
                   MaterialPageRoute(
