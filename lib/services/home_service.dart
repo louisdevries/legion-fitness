@@ -428,7 +428,8 @@ class HomeService {
           exercises (
             id,
             name,
-            media_url
+            media_url,
+            coaching_cues
           )
         ''')
         .eq('program_id', programId)
@@ -436,27 +437,122 @@ class HomeService {
         .eq('day_number', dayNumber)
         .order('id');
 
-    // Map to the format ExercisePreviewScreen expects
-    return (exercisesData as List).map((programEx) {
+    final exercises = <Map<String, dynamic>>[];
+
+    for (final programEx in exercisesData as List) {
       final exerciseData = programEx['exercises'];
-      return {
+      final exerciseId = programEx['exercise_id'] as int;
+
+      print("Processing exercise ID: $exerciseId");
+
+      // Fetch exercise details (sets, reps, duration)
+      final detailsData = await supabase
+          .from('program_exercise_details')
+          .select()
+          .eq('program_exercise_id', programEx['id'])
+          .maybeSingle();
+
+      // Fetch category using direct query
+      final categoryResult = await supabase
+          .from('exercise_category_association')
+          .select('category_id')
+          .eq('exercise_id', exerciseId)
+          .maybeSingle();
+
+      String category = 'main'; // Default
+      if (categoryResult != null) {
+        final categoryId = categoryResult['category_id'] as int?;
+        print("  Exercise $exerciseId has category_id: $categoryId");
+
+        if (categoryId == 1) {
+          category = 'warmup';
+        } else if (categoryId == 3) {
+          category = 'cooldown';
+        } else {
+          category = 'main';
+        }
+      } else {
+        print("  Exercise $exerciseId has NO category association!");
+      }
+
+      print("  Final category: $category");
+
+      // Fetch alternative exercise if it exists
+      final alternativeData = await supabase
+          .from('exercise_alternatives')
+          .select('''
+            alternative_id,
+            exercises!exercise_alternatives_alternative_id_fkey(
+              id,
+              name,
+              media_url,
+              coaching_cues
+            )
+          ''')
+          .eq('exercise_id', exerciseId)
+          .maybeSingle();
+
+      Map<String, dynamic>? alternative;
+      if (alternativeData != null && alternativeData['exercises'] != null) {
+        final altEx = alternativeData['exercises'];
+
+        // Get alternative exercise details if they exist
+        final altDetailsData = await supabase
+            .from('program_exercise_details')
+            .select()
+            .eq('exercise_id', altEx['id'])
+            .eq('program_exercise_id', programEx['id'])
+            .maybeSingle();
+
+        alternative = {
+          'id': altEx['id'],
+          'name': altEx['name'],
+          'media_url': altEx['media_url'],
+          'coaching_cues': altEx['coaching_cues'] ?? '',
+          'sets': altDetailsData?['sets'] ?? detailsData?['sets'] ?? 1,
+          'min_quantity': altDetailsData?['min_quantity'] ?? detailsData?['min_quantity'] ?? 10,
+          'max_quantity': altDetailsData?['max_quantity'] ?? detailsData?['max_quantity'] ?? 15,
+          'duration_type': altDetailsData?['duration_type'] ?? detailsData?['duration_type'] ?? 'reps',
+        };
+      }
+
+      final exercise = {
         'id': programEx['id'],
         'program_id': programEx['program_id'],
-        'exercise_id': programEx['exercise_id'],
+        'exercise_id': exerciseId,
         'week_number': programEx['week_number'],
         'day_number': programEx['day_number'],
-        'sets': programEx['sets'] ?? 1,
-        'reps_min': programEx['reps_min'],
-        'reps_max': programEx['reps_max'],
-        // Map to the fields ExercisePreviewScreen is looking for
-        'min_quantity': programEx['reps_min'],
-        'max_quantity': programEx['reps_max'],
-        // Include exercise details
+        'sets': detailsData?['sets'] ?? 1,
+        'reps_min': detailsData?['min_quantity'] ?? 10,
+        'reps_max': detailsData?['max_quantity'] ?? 15,
+        'min_quantity': detailsData?['min_quantity'] ?? 10,
+        'max_quantity': detailsData?['max_quantity'] ?? 15,
         'name': exerciseData?['name'] ?? 'Exercise',
         'media_url': exerciseData?['media_url'],
-        'duration_type': 'reps', // Default to reps
+        'coaching_cues': exerciseData?['coaching_cues'] ?? '',
+        'duration_type': detailsData?['duration_type'] ?? 'reps',
+        'category': category,
+        'alternative': alternative,
       };
-    }).toList();
+
+      exercises.add(exercise);
+    }
+
+    print("\n=== CATEGORY SUMMARY ===");
+    final warmups = exercises.where((e) => e['category'] == 'warmup').length;
+    final mains = exercises.where((e) => e['category'] == 'main').length;
+    final cooldowns = exercises.where((e) => e['category'] == 'cooldown').length;
+    print("Warmups: $warmups, Main: $mains, Cooldowns: $cooldowns");
+
+    // Sort by category order: warmup -> main -> cooldown
+    exercises.sort((a, b) {
+      final order = {'warmup': 0, 'main': 1, 'cooldown': 2};
+      final aOrder = order[a['category']] ?? 1;
+      final bOrder = order[b['category']] ?? 1;
+      return aOrder.compareTo(bOrder);
+    });
+
+    return exercises;
   }
 }
 

@@ -25,7 +25,8 @@ class ExerciseGenerator {
           exercises (
             id,
             name,
-            media_url
+            media_url,
+            coaching_cues
           )
         ''')
         .eq('program_id', programId)
@@ -60,10 +61,72 @@ class ExerciseGenerator {
       final exerciseId = programEx['exercise_id'] as int;
       final exerciseData = programEx['exercises'];
 
+      // Fetch exercise details (sets, reps, duration)
+      final detailsData = await supabase
+          .from('program_exercise_details')
+          .select()
+          .eq('program_exercise_id', programEx['id'])
+          .maybeSingle();
+
       // Get base values from Week 1
-      final baseRepsMin = programEx['reps_min'] as int?;
-      final baseRepsMax = programEx['reps_max'] as int?;
-      final sets = programEx['sets'] as int? ?? 1;
+      final baseRepsMin = detailsData?['min_quantity'] as int? ?? 10;
+      final baseRepsMax = detailsData?['max_quantity'] as int? ?? 15;
+      final sets = detailsData?['sets'] as int? ?? 1;
+
+      // Fetch category using direct query
+      final categoryResult = await supabase
+          .from('exercise_category_association')
+          .select('category_id')
+          .eq('exercise_id', exerciseId)
+          .maybeSingle();
+
+      String category = 'main'; // Default
+      if (categoryResult != null) {
+        final categoryId = categoryResult['category_id'] as int?;
+        print("  Exercise $exerciseId has category_id: $categoryId");
+
+        if (categoryId == 1) {
+          category = 'warmup';
+        } else if (categoryId == 3) {
+          category = 'cooldown';
+        } else {
+          category = 'main';
+        }
+      } else {
+        print("  Exercise $exerciseId has NO category association!");
+      }
+
+      print("  Final category: $category");
+
+      // Fetch alternative exercise if it exists
+      final alternativeData = await supabase
+          .from('exercise_alternatives')
+          .select('''
+            alternative_id,
+            exercises!exercise_alternatives_alternative_id_fkey(
+              id,
+              name,
+              media_url,
+              coaching_cues
+            )
+          ''')
+          .eq('exercise_id', exerciseId)
+          .maybeSingle();
+
+      Map<String, dynamic>? alternative;
+      if (alternativeData != null && alternativeData['exercises'] != null) {
+        final altEx = alternativeData['exercises'];
+        alternative = {
+          'id': altEx['id'],
+          'name': altEx['name'],
+          'media_url': altEx['media_url'],
+          'coaching_cues': altEx['coaching_cues'] ?? '',
+          'sets': sets,
+          'min_quantity': baseRepsMin,
+          'max_quantity': baseRepsMax,
+          'duration_type': detailsData?['duration_type'] ?? 'reps',
+        };
+      }
 
       // Apply progressive overload
       final performance = previousPerformance[exerciseId];
@@ -90,11 +153,22 @@ class ExerciseGenerator {
         // Include exercise details
         'name': exerciseData?['name'] ?? 'Exercise',
         'media_url': exerciseData?['media_url'],
-        'duration_type': 'reps', // Default to reps
+        'coaching_cues': exerciseData?['coaching_cues'] ?? '',
+        'duration_type': detailsData?['duration_type'] ?? 'reps',
+        'category': category,
+        'alternative': alternative,
       };
 
       generatedExercises.add(modifiedExercise);
     }
+
+    // Sort by category order: warmup -> main -> cooldown
+    generatedExercises.sort((a, b) {
+      final order = {'warmup': 0, 'main': 1, 'cooldown': 2};
+      final aOrder = order[a['category']] ?? 1;
+      final bOrder = order[b['category']] ?? 1;
+      return aOrder.compareTo(bOrder);
+    });
 
     print("Generated ${generatedExercises.length} exercises for Week $targetWeek Day $targetDay");
     return generatedExercises;

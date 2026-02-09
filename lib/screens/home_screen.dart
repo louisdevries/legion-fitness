@@ -3,6 +3,7 @@ import 'exercise_preview_screen.dart';
 import '../models/home_state.dart';
 import '../services/home_service.dart';
 import '../services/exercise_generator.dart';
+import 'custom_exercise_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -51,14 +52,12 @@ class _HomeScreenState extends State<HomeScreen>
       List<Map<String, dynamic>> exercises;
 
       if (_state.nextWeek == 1) {
-        // Week 1: Fetch directly from database
         exercises = await _homeService.fetchWeek1Exercises(
           programId: _state.programId!,
           weekNumber: _state.nextWeek!,
           dayNumber: _state.nextDay!,
         );
       } else {
-        // Week 2+: Generate with progressive overload
         exercises = await _exerciseGenerator.generateProgressiveExercises(
           programId: _state.programId!,
           targetWeek: _state.nextWeek!,
@@ -80,7 +79,7 @@ class _HomeScreenState extends State<HomeScreen>
         ),
       );
     } catch (e) {
-      print("Error navigating to workout: $e");
+      debugPrint("Error navigating to workout: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error loading workout: $e')),
@@ -112,13 +111,27 @@ class _HomeScreenState extends State<HomeScreen>
           const SizedBox(height: 20),
           _buildWeeklyProgressCard(),
           const SizedBox(height: 28),
-          _buildActionSection(
-            title: "Custom Programs",
-            description: "Build or manage your workout plans",
-            icon: Icons.fitness_center,
-            route: '/create-program',
+
+          /// ✅ CUSTOM PROGRAMS (direct navigation)
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const CustomExerciseScreen(),
+                ),
+              );
+            },
+            child: _buildActionSectionStatic(
+              title: "Custom Programs",
+              description: "Build or manage your workout plans",
+              icon: Icons.fitness_center,
+            ),
           ),
+
           const SizedBox(height: 16),
+
+          /// Meal suggestions (route-based, unchanged)
           _buildActionSection(
             title: "Meal Suggestions",
             description: "Nutrition to support your training",
@@ -174,9 +187,10 @@ class _HomeScreenState extends State<HomeScreen>
                   Text(
                     _state.programName ?? '',
                     style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold),
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
@@ -202,7 +216,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildWeeklyProgressCard() {
-    const allDays = [1, 2, 3, 4, 5, 6, 7]; // Monday = 1, Sunday = 7
+    const allDays = [1, 2, 3, 4, 5, 6, 7];
     final weekdayToday = DateTime.now().weekday;
 
     return Container(
@@ -217,7 +231,10 @@ class _HomeScreenState extends State<HomeScreen>
           const Text(
             "This Week",
             style: TextStyle(
-                fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
           ),
           const SizedBox(height: 12),
           Row(
@@ -258,8 +275,9 @@ class _HomeScreenState extends State<HomeScreen>
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.blueAccent
-                              .withOpacity(0.25 + (_pulseController.value * 0.25)),
+                          color: Colors.blueAccent.withOpacity(
+                            0.25 + (_pulseController.value * 0.25),
+                          ),
                           blurRadius: 6 + (_pulseController.value * 6),
                         )
                       ],
@@ -271,38 +289,24 @@ class _HomeScreenState extends State<HomeScreen>
               }
 
               return Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Column(
-                    children: [
-                      circle,
-                      const SizedBox(height: 4),
-                      Text(
-                        _dayLabel(d),
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: isToday ? Colors.blueAccent : Colors.white70,
-                          fontWeight:
-                          isToday ? FontWeight.bold : FontWeight.normal,
-                        ),
+                child: Column(
+                  children: [
+                    circle,
+                    const SizedBox(height: 4),
+                    Text(
+                      _dayLabel(d),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color:
+                        isToday ? Colors.blueAccent : Colors.white70,
+                        fontWeight:
+                        isToday ? FontWeight.bold : FontWeight.normal,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               );
             }).toList(),
-          ),
-          const SizedBox(height: 12),
-          LinearProgressIndicator(
-            value: _state.weekProgress,
-            backgroundColor: Colors.white24,
-            color: Colors.lightGreenAccent,
-            minHeight: 6,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            "${_state.completedDays.length} workout${_state.completedDays.length == 1 ? '' : 's'} this week",
-            style: const TextStyle(fontSize: 12, color: Colors.white60),
           ),
         ],
       ),
@@ -317,32 +321,50 @@ class _HomeScreenState extends State<HomeScreen>
   }) {
     return GestureDetector(
       onTap: () => Navigator.pushNamed(context, route),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.blueGrey.shade50,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 36, color: Colors.black87),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  Text(description,
-                      style: const TextStyle(color: Colors.black54)),
-                ],
-              ),
+      child: _buildActionSectionStatic(
+        title: title,
+        description: description,
+        icon: icon,
+      ),
+    );
+  }
+
+  Widget _buildActionSectionStatic({
+    required String title,
+    required String description,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.blueGrey.shade50,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 36, color: Colors.black87),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: const TextStyle(color: Colors.black54),
+                ),
+              ],
             ),
-            const Icon(Icons.arrow_forward_ios, size: 16),
-          ],
-        ),
+          ),
+          const Icon(Icons.arrow_forward_ios, size: 16),
+        ],
       ),
     );
   }

@@ -37,6 +37,8 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
   bool isPaused = false;
   bool isResting = false;
   bool mediaReady = false;
+  bool showCategoryHeader = false;
+  bool usingAlternative = false;
 
   int lastSelectedReps = 1;
   int lastSelectedSeconds = 0;
@@ -47,6 +49,8 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
   late List<Map<String, dynamic>> exercises;
 
   Map<String, dynamic> get currentExercise => exercises[currentIndex];
+  Map<String, dynamic>? get currentAlternative => currentExercise['alternative'] as Map<String, dynamic>?;
+
   int get totalSets => currentExercise['sets'] as int? ?? 1;
 
   bool get isLastSet => currentSet >= totalSets;
@@ -59,7 +63,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
     exercises = widget.exercises.map((e) {
       return {
         ...e,
-        'exercise_id': e['id'],
+        'exercise_id': e['exercise_id'] ?? e['id'],
         'program_id': widget.programId,
         'week_number': widget.weekNumber,
         'day_number': widget.dayNumber,
@@ -70,21 +74,121 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
     dingPlayer = AudioPlayer();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      startCurrentExercise();
+      _checkAndShowCategoryHeader();
     });
+  }
+
+  // ------------------ CATEGORY HEADER ------------------
+
+  void _checkAndShowCategoryHeader() {
+    final currentCategory = currentExercise['category'] as String? ?? 'main';
+
+    // Check if this is the first exercise in this category
+    bool isFirstInCategory = true;
+    if (currentIndex > 0) {
+      final previousCategory = exercises[currentIndex - 1]['category'] as String? ?? 'main';
+      isFirstInCategory = currentCategory != previousCategory;
+    }
+
+    if (isFirstInCategory) {
+      setState(() => showCategoryHeader = true);
+
+      // Show category header dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          title: Text(_getCategoryTitle(currentCategory)),
+          content: Text(_getCategoryDescription(currentCategory)),
+          actions: [
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                setState(() => showCategoryHeader = false);
+                startCurrentExercise();
+              },
+              child: const Text("Start"),
+            ),
+          ],
+        ),
+      );
+    } else {
+      startCurrentExercise();
+    }
+  }
+
+  String _getCategoryTitle(String category) {
+    switch (category.toLowerCase()) {
+      case 'warmup':
+        return '🔥 Warm-up';
+      case 'cooldown':
+        return '❄️ Cool-down';
+      case 'main':
+      default:
+        return '💪 Main Workout';
+    }
+  }
+
+  String _getCategoryDescription(String category) {
+    switch (category.toLowerCase()) {
+      case 'warmup':
+        return 'Prepare your body for the workout ahead';
+      case 'cooldown':
+        return 'Wind down and stretch to aid recovery';
+      case 'main':
+      default:
+        return 'Time to work! Give it your all';
+    }
   }
 
   // ------------------ HELPERS ------------------
 
+  int getMinQuantity() {
+    final ex = usingAlternative && currentAlternative != null ? currentAlternative! : currentExercise;
+    return ex['min_quantity'] as int? ?? 0;
+  }
+
+  int getMaxQuantity() {
+    final ex = usingAlternative && currentAlternative != null ? currentAlternative! : currentExercise;
+    return ex['max_quantity'] as int? ?? getMinQuantity();
+  }
+
   int getQuantity() {
-    final minQ = currentExercise['min_quantity'] as int? ?? 0;
-    final maxQ = currentExercise['max_quantity'] as int? ?? minQ;
+    final minQ = getMinQuantity();
+    final maxQ = getMaxQuantity();
     return max(1, ((minQ + maxQ) / 2).round());
   }
 
+  String getQuantityDisplay() {
+    final minQ = getMinQuantity();
+    final maxQ = getMaxQuantity();
+
+    if (minQ == maxQ) {
+      return '$minQ';
+    } else {
+      return '$minQ-$maxQ';
+    }
+  }
+
   bool isTimedExercise() {
-    final t = (currentExercise['duration_type'] ?? '').toString().toLowerCase();
+    final ex = usingAlternative && currentAlternative != null ? currentAlternative! : currentExercise;
+    final t = (ex['duration_type'] ?? '').toString().toLowerCase();
     return t.contains('sec');
+  }
+
+  String getCurrentExerciseName() {
+    final ex = usingAlternative && currentAlternative != null ? currentAlternative! : currentExercise;
+    return ex['name'] as String? ?? 'Exercise';
+  }
+
+  String? getCurrentMediaUrl() {
+    final ex = usingAlternative && currentAlternative != null ? currentAlternative! : currentExercise;
+    return ex['media_url'] as String?;
+  }
+
+  String getCurrentCoachingCues() {
+    final ex = usingAlternative && currentAlternative != null ? currentAlternative! : currentExercise;
+    return ex['coaching_cues'] as String? ?? '';
   }
 
   // ------------------ EXERCISE START ------------------
@@ -94,10 +198,10 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
     isResting = false;
     isPaused = false;
     mediaReady = false;
-    setState(() {});
+    if (mounted) setState(() {});
 
-    final url = currentExercise['media_url'];
-    if (url != null && url.toString().isNotEmpty) {
+    final url = getCurrentMediaUrl();
+    if (url != null && url.isNotEmpty) {
       try {
         await precacheImage(CachedNetworkImageProvider(url), context);
       } catch (_) {}
@@ -115,10 +219,15 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
       remainingSeconds = 0;
     }
 
-    setState(() {});
+    if (mounted) setState(() {});
 
     if (isTimedExercise()) {
       exerciseTimer = Timer.periodic(const Duration(seconds: 1), (t) async {
+        if (!mounted) {
+          t.cancel();
+          return;
+        }
+
         if (isPaused) return;
 
         if (remainingSeconds <= 1) {
@@ -126,7 +235,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
           await dingPlayer.play(AssetSource('sounds/ding.wav'));
           await completeExerciseSet(logSet: true);
         } else {
-          setState(() => remainingSeconds--);
+          if (mounted) setState(() => remainingSeconds--);
           if (remainingSeconds <= 5) {
             await tickPlayer.play(AssetSource('sounds/tick.wav'));
           }
@@ -145,8 +254,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
       exerciseId: ex['exercise_id'],
       weekNumber: ex['week_number'],
       dayNumber: ex['day_number'],
-      repsCompleted:
-      isTimedExercise() ? lastSelectedSeconds : lastSelectedReps,
+      repsCompleted: isTimedExercise() ? lastSelectedSeconds : lastSelectedReps,
       weightUsedKg: ex['weight_used_kg'] != null
           ? (ex['weight_used_kg'] as num).toDouble()
           : null,
@@ -203,6 +311,8 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
     if (!isLastSet) {
       startRest(nextExerciseIndex: currentIndex, nextSet: currentSet + 1);
     } else if (!isLastExercise) {
+      // Reset to main exercise for next exercise
+      usingAlternative = false;
       startRest(nextExerciseIndex: currentIndex + 1, nextSet: 1);
     } else {
       await showWorkoutComplete();
@@ -216,18 +326,64 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
     isResting = true;
     remainingSeconds = widget.restSeconds;
     totalSeconds = widget.restSeconds;
-    setState(() {});
+    if (mounted) setState(() {});
 
     exerciseTimer = Timer.periodic(const Duration(seconds: 1), (t) async {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+
       if (remainingSeconds <= 1) {
         t.cancel();
-        currentIndex = nextExerciseIndex;
-        currentSet = nextSet;
-        startCurrentExercise();
+        _proceedToNextExercise(nextExerciseIndex, nextSet);
       } else {
-        setState(() => remainingSeconds--);
+        if (mounted) setState(() => remainingSeconds--);
       }
     });
+  }
+
+  void skipRest() {
+    exerciseTimer?.cancel();
+    final nextIndex = currentIndex;
+    final nextSet = currentSet;
+
+    // Determine what's next
+    if (!isLastSet) {
+      _proceedToNextExercise(currentIndex, currentSet + 1);
+    } else if (!isLastExercise) {
+      _proceedToNextExercise(currentIndex + 1, 1);
+    }
+  }
+
+  void _proceedToNextExercise(int nextExerciseIndex, int nextSet) {
+    currentIndex = nextExerciseIndex;
+    currentSet = nextSet;
+
+    // Reset to main exercise for new exercise
+    if (nextSet == 1) {
+      usingAlternative = false;
+    }
+
+    // Check if we need to show category header
+    if (nextSet == 1) {
+      _checkAndShowCategoryHeader();
+    } else {
+      startCurrentExercise();
+    }
+  }
+
+  // ------------------ SWITCH TO ALTERNATIVE ------------------
+
+  void switchToAlternative() {
+    if (currentAlternative == null) return;
+
+    setState(() {
+      usingAlternative = !usingAlternative;
+    });
+
+    // Restart the current set with the alternative exercise
+    startCurrentExercise();
   }
 
   // ------------------ TIMER ADJUST ------------------
@@ -274,8 +430,10 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ex = currentExercise;
     final isTimed = isTimedExercise();
+    final exerciseName = getCurrentExerciseName();
+    final coachingCues = getCurrentCoachingCues();
+    final hasAlternative = currentAlternative != null;
 
     final progress = totalSeconds == 0
         ? 0.0
@@ -283,16 +441,65 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(isResting ? "Rest" : ex['name'] ?? 'Exercise'),
+        title: Text(isResting ? "Rest" : exerciseName),
         backgroundColor: isResting ? Colors.green : null,
+        actions: [
+          if (!isResting && hasAlternative)
+            IconButton(
+              icon: Icon(usingAlternative ? Icons.swap_horiz : Icons.sync_alt),
+              tooltip: usingAlternative ? 'Switch to main' : 'Try easier version',
+              onPressed: switchToAlternative,
+            ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            Text(
-              "Set $currentSet / $totalSets",
-              style: const TextStyle(fontWeight: FontWeight.bold),
+            // Category badge
+            if (!isResting)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _getCategoryColor(currentExercise['category'] as String? ?? 'main'),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  _getCategoryTitle(currentExercise['category'] as String? ?? 'main'),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+
+            const SizedBox(height: 8),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "Set $currentSet / $totalSets",
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                if (usingAlternative)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      "Easier Version",
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange,
+                      ),
+                    ),
+                  ),
+              ],
             ),
 
             const SizedBox(height: 12),
@@ -301,24 +508,50 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
             !isResting
                 ? ClipRRect(
               borderRadius: BorderRadius.circular(16),
-              child: mediaReady
+              child: mediaReady && getCurrentMediaUrl() != null
                   ? CachedNetworkImage(
-                imageUrl: ex['media_url'],
+                imageUrl: getCurrentMediaUrl()!,
                 height: 220,
                 width: double.infinity,
                 fit: BoxFit.cover,
               )
                   : const SizedBox(
                 height: 220,
-                child: Center(
-                    child: CircularProgressIndicator()),
+                child: Center(child: CircularProgressIndicator()),
               ),
             )
                 : const Text(
               "REST",
-              style:
-              TextStyle(fontSize: 48, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold),
             ),
+
+            const SizedBox(height: 16),
+
+            // Coaching Cues
+            if (!isResting && coachingCues.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.tips_and_updates, color: Colors.blue.shade700, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        coachingCues,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.blue.shade900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
             const SizedBox(height: 16),
 
@@ -334,8 +567,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
                       child: CircularProgressIndicator(
                         value: 1,
                         strokeWidth: 14,
-                        valueColor:
-                        AlwaysStoppedAnimation(Colors.grey.shade300),
+                        valueColor: AlwaysStoppedAnimation(Colors.grey.shade300),
                       ),
                     ),
                     if (isTimed || isResting)
@@ -347,12 +579,26 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
                           strokeWidth: 14,
                         ),
                       ),
-                    Text(
-                      isTimed || isResting
-                          ? "$remainingSeconds"
-                          : "$lastSelectedReps reps",
-                      style: const TextStyle(
-                          fontSize: 48, fontWeight: FontWeight.bold),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          isTimed || isResting
+                              ? "$remainingSeconds"
+                              : getQuantityDisplay(),
+                          style: const TextStyle(
+                            fontSize: 48,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          isTimed || isResting ? "seconds" : "reps",
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -364,23 +610,53 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   ElevatedButton(
-                      onPressed: () => adjustTimer(-5),
-                      child: const Text("-5s")),
+                    onPressed: () => adjustTimer(-5),
+                    child: const Text("-5s"),
+                  ),
                   ElevatedButton(
-                      onPressed: () => adjustTimer(5),
-                      child: const Text("+5s")),
+                    onPressed: () => adjustTimer(5),
+                    child: const Text("+5s"),
+                  ),
                 ],
               ),
 
             const SizedBox(height: 12),
 
-            ElevatedButton(
-              onPressed: () => completeExerciseSet(logSet: true),
-              child: const Text("Finish Set"),
-            ),
+            if (isResting)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: skipRest,
+                    icon: const Icon(Icons.skip_next),
+                    label: const Text("Skip Rest"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              )
+            else
+              ElevatedButton(
+                onPressed: () => completeExerciseSet(logSet: true),
+                child: const Text("Finish Set"),
+              ),
           ],
         ),
       ),
     );
+  }
+
+  Color _getCategoryColor(String category) {
+    switch (category.toLowerCase()) {
+      case 'warmup':
+        return Colors.orange;
+      case 'cooldown':
+        return Colors.blue;
+      case 'main':
+      default:
+        return Colors.green;
+    }
   }
 }
