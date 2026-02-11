@@ -84,20 +84,25 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title,
-                style: const TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 12),
 
-            /// EXERCISE DROPDOWN (FROM DB)
+            /// EXERCISE DROPDOWN
             DropdownButtonFormField<int>(
               value: state.exerciseId,
               hint: const Text("Select exercise"),
+              isExpanded: true,
               items: _allExercises
                   .map(
                     (e) => DropdownMenuItem(
                   value: e.id,
-                  child: Text(e.name),
+                  child: Text(
+                    e.name,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               )
                   .toList(),
@@ -110,16 +115,15 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
             TextField(
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: "Sets"),
-              onChanged: (v) =>
-              state.sets = int.tryParse(v) ?? 1,
+              onChanged: (v) => state.sets = int.tryParse(v) ?? 1,
             ),
 
             const SizedBox(height: 12),
 
-            /// REPS / SECONDS
+            /// REPS / SECONDS — NO OVERFLOW, NO MATH
             Row(
               children: [
-                Expanded(
+                Flexible(
                   child: TextField(
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(labelText: "Min"),
@@ -128,7 +132,7 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Expanded(
+                Flexible(
                   child: TextField(
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(labelText: "Max"),
@@ -137,14 +141,23 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                DropdownButton<String>(
-                  value: state.durationType,
-                  items: const [
-                    DropdownMenuItem(value: 'reps', child: Text("Reps")),
-                    DropdownMenuItem(value: 'seconds', child: Text("Sec")),
-                  ],
-                  onChanged: (v) =>
-                      setState(() => state.durationType = v!),
+                SizedBox(
+                  width: 80,
+                  child: DropdownButtonFormField<String>(
+                    value: state.durationType,
+                    isDense: true,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      contentPadding:
+                      EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'reps', child: Text("Reps")),
+                      DropdownMenuItem(value: 'seconds', child: Text("Sec")),
+                    ],
+                    onChanged: (v) =>
+                        setState(() => state.durationType = v!),
+                  ),
                 ),
               ],
             ),
@@ -221,10 +234,6 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
 
     debugPrint("Custom workout ready:");
     debugPrint(exercisesByCategory.toString());
-
-    // NEXT:
-    // - Convert to ExercisePreviewScreen input
-    // - Or persist as temporary program
   }
 }
 

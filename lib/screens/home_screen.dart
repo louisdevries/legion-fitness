@@ -4,6 +4,7 @@ import '../models/home_state.dart';
 import '../services/home_service.dart';
 import '../services/exercise_generator.dart';
 import 'custom_exercise_screen.dart';
+import 'premium_program_screen.dart'; // NEW
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -49,21 +50,17 @@ class _HomeScreenState extends State<HomeScreen>
     if (_state.nextWeek == null || _state.nextDay == null) return;
 
     try {
-      List<Map<String, dynamic>> exercises;
-
-      if (_state.nextWeek == 1) {
-        exercises = await _homeService.fetchWeek1Exercises(
-          programId: _state.programId!,
-          weekNumber: _state.nextWeek!,
-          dayNumber: _state.nextDay!,
-        );
-      } else {
-        exercises = await _exerciseGenerator.generateProgressiveExercises(
-          programId: _state.programId!,
-          targetWeek: _state.nextWeek!,
-          targetDay: _state.nextDay!,
-        );
-      }
+      final exercises = _state.nextWeek == 1
+          ? await _homeService.fetchWeek1Exercises(
+        programId: _state.programId!,
+        weekNumber: _state.nextWeek!,
+        dayNumber: _state.nextDay!,
+      )
+          : await _exerciseGenerator.generateProgressiveExercises(
+        programId: _state.programId!,
+        targetWeek: _state.nextWeek!,
+        targetDay: _state.nextDay!,
+      );
 
       if (!mounted) return;
 
@@ -79,12 +76,10 @@ class _HomeScreenState extends State<HomeScreen>
         ),
       );
     } catch (e) {
-      debugPrint("Error navigating to workout: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading workout: $e')),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading workout: $e')),
+      );
     }
   }
 
@@ -108,11 +103,11 @@ class _HomeScreenState extends State<HomeScreen>
       child: Column(
         children: [
           _buildResumeWorkoutBanner(),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
           _buildWeeklyProgressCard(),
-          const SizedBox(height: 28),
+          const SizedBox(height: 32),
 
-          /// ✅ CUSTOM PROGRAMS (direct navigation)
+          // Custom Programs
           GestureDetector(
             onTap: () {
               Navigator.push(
@@ -129,9 +124,29 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
 
-          /// Meal suggestions (route-based, unchanged)
+          // Premium Program (NEW)
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const PremiumProgramScreen(),
+                ),
+              );
+            },
+            child: _buildActionSectionStatic(
+              title: "Premium Program",
+              description: "Get a program designed just for you",
+              icon: Icons.workspace_premium,
+              premium: true, // NEW
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          // Meal Suggestions
           _buildActionSection(
             title: "Meal Suggestions",
             description: "Nutrition to support your training",
@@ -143,19 +158,23 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // ================= RESUME BANNER =================
+
   Widget _buildResumeWorkoutBanner() {
+    final theme = Theme.of(context);
+
     return GestureDetector(
       onTap: _state.isProgramComplete ? null : _navigateToWorkout,
       child: Container(
         height: 220,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: const [
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
             BoxShadow(
-              color: Colors.black26,
-              blurRadius: 12,
-              offset: Offset(0, 6),
-            )
+              color: Colors.black.withOpacity(0.18),
+              blurRadius: 10,
+              offset: const Offset(0, 6),
+            ),
           ],
         ),
         clipBehavior: Clip.antiAlias,
@@ -186,9 +205,8 @@ class _HomeScreenState extends State<HomeScreen>
                 children: [
                   Text(
                     _state.programName ?? '',
-                    style: const TextStyle(
+                    style: theme.textTheme.titleLarge?.copyWith(
                       color: Colors.white,
-                      fontSize: 22,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -197,7 +215,8 @@ class _HomeScreenState extends State<HomeScreen>
                     _state.isProgramComplete
                         ? "🎉 Program completed"
                         : "Resume · Week ${_state.nextWeek} Day ${_state.nextDay}",
-                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: Colors.white70),
                   ),
                   const SizedBox(height: 10),
                   LinearProgressIndicator(
@@ -208,97 +227,90 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                 ],
               ),
-            )
+            ),
           ],
         ),
       ),
     );
   }
 
+  // ================= WEEKLY PROGRESS =================
+
   Widget _buildWeeklyProgressCard() {
-    const allDays = [1, 2, 3, 4, 5, 6, 7];
-    final weekdayToday = DateTime.now().weekday;
+    final theme = Theme.of(context);
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.blueGrey.shade900,
-        borderRadius: BorderRadius.circular(14),
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: theme.colorScheme.onSurface.withOpacity(0.06),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(
+              theme.brightness == Brightness.dark ? 0.28 : 0.10,
+            ),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             "This Week",
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
+            style: theme.textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: allDays.map((d) {
+            children: List.generate(7, (i) {
+              final d = i + 1;
               final done = _state.completedDays[d] == true;
-              final isToday = d == weekdayToday;
-
-              Widget circle = Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: done ? Colors.green : Colors.grey.shade700,
-                  border: isToday
-                      ? Border.all(color: Colors.blueAccent, width: 2.5)
-                      : null,
-                ),
-                child: Center(
-                  child: done
-                      ? const Icon(Icons.check, color: Colors.white, size: 20)
-                      : Text(
-                    _dayLabel(d).substring(0, 1),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              );
-
-              if (isToday && !done) {
-                circle = AnimatedBuilder(
-                  animation: _pulseController,
-                  builder: (_, child) => Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.blueAccent.withOpacity(
-                            0.25 + (_pulseController.value * 0.25),
-                          ),
-                          blurRadius: 6 + (_pulseController.value * 6),
-                        )
-                      ],
-                    ),
-                    child: child,
-                  ),
-                  child: circle,
-                );
-              }
+              final isToday = d == DateTime.now().weekday;
 
               return Expanded(
                 child: Column(
                   children: [
-                    circle,
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: done
+                            ? Colors.green
+                            : theme.colorScheme.onSurface.withOpacity(0.15),
+                        border: isToday
+                            ? Border.all(
+                          color: theme.colorScheme.primary,
+                          width: 2,
+                        )
+                            : null,
+                      ),
+                      child: Center(
+                        child: done
+                            ? const Icon(Icons.check,
+                            color: Colors.white, size: 20)
+                            : Text(
+                          _dayLabel(d)[0],
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       _dayLabel(d),
                       style: TextStyle(
                         fontSize: 11,
-                        color:
-                        isToday ? Colors.blueAccent : Colors.white70,
+                        color: isToday
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurface.withOpacity(0.7),
                         fontWeight:
                         isToday ? FontWeight.bold : FontWeight.normal,
                       ),
@@ -306,12 +318,14 @@ class _HomeScreenState extends State<HomeScreen>
                   ],
                 ),
               );
-            }).toList(),
+            }),
           ),
         ],
       ),
     );
   }
+
+  // ================= ACTION CARDS =================
 
   Widget _buildActionSection({
     required String title,
@@ -333,16 +347,59 @@ class _HomeScreenState extends State<HomeScreen>
     required String title,
     required String description,
     required IconData icon,
+    bool premium = false,
   }) {
+    final theme = Theme.of(context);
+
+    // Adaptive colors
+    Color cardColor;
+    Color iconColor;
+    Color iconBackgroundColor;
+
+    if (premium) {
+      if (theme.brightness == Brightness.dark) {
+        cardColor = Colors.orange.shade800; // dark amber for dark mode
+        iconBackgroundColor = Colors.orange.shade600.withOpacity(0.25);
+        iconColor = Colors.orange.shade200;
+      } else {
+        cardColor = Colors.amber.shade100; // light amber for light mode
+        iconBackgroundColor = Colors.amber.shade600.withOpacity(0.15);
+        iconColor = Colors.amber.shade800;
+      }
+    } else {
+      cardColor = theme.colorScheme.surface;
+      iconBackgroundColor = theme.colorScheme.primary.withOpacity(0.15);
+      iconColor = theme.colorScheme.primary;
+    }
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.blueGrey.shade50,
-        borderRadius: BorderRadius.circular(16),
+        color: cardColor,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: theme.colorScheme.onSurface.withOpacity(0.06),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(
+              theme.brightness == Brightness.dark ? 0.30 : 0.12,
+            ),
+            blurRadius: 10,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Row(
         children: [
-          Icon(icon, size: 36, color: Colors.black87),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: iconBackgroundColor,
+            ),
+            child: Icon(icon, size: 26, color: iconColor),
+          ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
@@ -350,24 +407,35 @@ class _HomeScreenState extends State<HomeScreen>
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    fontSize: 18,
+                  style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
+                    color: premium && theme.brightness == Brightness.dark
+                        ? Colors.white
+                        : null, // ensures readable text
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   description,
-                  style: const TextStyle(color: Colors.black54),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: premium && theme.brightness == Brightness.dark
+                        ? Colors.white70
+                        : theme.colorScheme.onSurface.withOpacity(0.7),
+                  ),
                 ),
               ],
             ),
           ),
-          const Icon(Icons.arrow_forward_ios, size: 16),
+          Icon(
+            Icons.arrow_forward_ios,
+            size: 16,
+            color: theme.colorScheme.onSurface.withOpacity(0.5),
+          ),
         ],
       ),
     );
   }
+
 
   String _dayLabel(int d) {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

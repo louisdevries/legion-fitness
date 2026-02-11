@@ -12,6 +12,45 @@ import 'screens/progress_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/outdoor_run_screen.dart';
 
+/// =======================================================
+/// =============== GLOBAL APP SETTINGS ===================
+/// =======================================================
+
+class AppSettings {
+  static final themeMode = ValueNotifier<ThemeMode>(ThemeMode.system);
+  static final restTimerSeconds = ValueNotifier<int>(60);
+
+  static Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final theme = prefs.getString('themeMode');
+    final rest = prefs.getInt('restTimerSeconds');
+
+    if (theme != null) {
+      themeMode.value = ThemeMode.values.firstWhere(
+            (e) => e.name == theme,
+        orElse: () => ThemeMode.system,
+      );
+    }
+
+    if (rest != null) {
+      restTimerSeconds.value = rest;
+    }
+  }
+
+  static Future<void> setThemeMode(ThemeMode mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('themeMode', mode.name);
+    themeMode.value = mode;
+  }
+
+  static Future<void> setRestTimer(int seconds) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('restTimerSeconds', seconds);
+    restTimerSeconds.value = seconds;
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -20,43 +59,64 @@ Future<void> main() async {
     anonKey: 'sb_publishable_Azh2yCvYGguExBupLcQHTQ_hU9y4WVy',
   );
 
+  await AppSettings.load();
+
   runApp(const LegionFitnessApp());
 }
+
+/// =======================================================
+/// ===================== APP ROOT ========================
+/// =======================================================
 
 class LegionFitnessApp extends StatelessWidget {
   const LegionFitnessApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Legion Fitness',
-      debugShowCheckedModeBanner: false,
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppSettings.themeMode,
+      builder: (_, themeMode, __) {
+        return MaterialApp(
+          title: 'Legion Fitness',
+          debugShowCheckedModeBanner: false,
 
-      // Force DD/MM/YYYY locale
-      locale: const Locale('en', 'ZA'),
-      supportedLocales: const [
-        Locale('en', 'ZA'),
-        Locale('en', 'GB'),
-      ],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
+          locale: const Locale('en', 'ZA'),
+          supportedLocales: const [
+            Locale('en', 'ZA'),
+            Locale('en', 'GB'),
+          ],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
 
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
+          themeMode: themeMode,
 
-      home: const AuthGate(),
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+            useMaterial3: true,
+          ),
+
+          darkTheme: ThemeData(
+            brightness: Brightness.dark,
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: Colors.deepPurple,
+              brightness: Brightness.dark,
+            ),
+            useMaterial3: true,
+          ),
+
+          home: const AuthGate(),
+        );
+      },
     );
   }
 }
 
-// =======================================================
-// ===================== AUTH GATE ======================
-// =======================================================
+/// =======================================================
+/// ===================== AUTH GATE =======================
+/// =======================================================
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
@@ -94,26 +154,23 @@ class _AuthGateState extends State<AuthGate> {
       builder: (context, snapshot) {
         final session = Supabase.instance.client.auth.currentSession;
 
-        // 1️⃣ First launch → show welcome
         if (!hasSeenWelcome!) {
           return const WelcomeScreen();
         }
 
-        // 2️⃣ Logged in → main app
         if (session != null) {
           return const MainShell(isGuest: false);
         }
 
-        // 3️⃣ Not logged in → allow guest access
         return const MainShell(isGuest: true);
       },
     );
   }
 }
 
-// =======================================================
-// ===================== MAIN SHELL ======================
-// =======================================================
+/// =======================================================
+/// ===================== MAIN SHELL ======================
+/// =======================================================
 
 class MainShell extends StatefulWidget {
   final bool isGuest;
@@ -142,7 +199,6 @@ class _MainShellState extends State<MainShell> {
       const HomeScreen(),
       const ProgramsScreen(),
       const OutdoorRunScreen(),
-      // Show guest-friendly message if not logged in
       widget.isGuest
           ? const Center(
         child: Padding(
@@ -155,7 +211,6 @@ class _MainShellState extends State<MainShell> {
         ),
       )
           : const ProgressScreen(),
-      // Always use ProfileScreen, it handles guest vs logged-in internally
       const ProfileScreen(),
     ];
   }
@@ -170,11 +225,7 @@ class _MainShellState extends State<MainShell> {
       body: _screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
+        onTap: (index) => setState(() => _currentIndex = index),
         type: BottomNavigationBarType.fixed,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
