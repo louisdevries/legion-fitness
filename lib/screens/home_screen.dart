@@ -4,7 +4,8 @@ import '../models/home_state.dart';
 import '../services/home_service.dart';
 import '../services/exercise_generator.dart';
 import 'custom_exercise_screen.dart';
-import 'premium_program_screen.dart'; // NEW
+import 'premium_program_screen.dart';
+import '../main.dart'; // Import AppSettings
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -49,6 +50,8 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _navigateToWorkout() async {
     if (_state.nextWeek == null || _state.nextDay == null) return;
 
+    AppSettings.showLoading(); // Show universal loading
+
     try {
       final exercises = _state.nextWeek == 1
           ? await _homeService.fetchWeek1Exercises(
@@ -76,10 +79,13 @@ class _HomeScreenState extends State<HomeScreen>
         ),
       );
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading workout: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading workout: $e')),
+        );
+      }
+    } finally {
+      AppSettings.hideLoading(); // Hide universal loading
     }
   }
 

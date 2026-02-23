@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'widgets/loading_overlay.dart';
 
 // Screens
 import 'auth/login_screen.dart';
@@ -19,6 +20,7 @@ import 'screens/outdoor_run_screen.dart';
 class AppSettings {
   static final themeMode = ValueNotifier<ThemeMode>(ThemeMode.system);
   static final restTimerSeconds = ValueNotifier<int>(60);
+  static final globalLoading = ValueNotifier<bool>(false);
 
   static Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -49,6 +51,9 @@ class AppSettings {
     await prefs.setInt('restTimerSeconds', seconds);
     restTimerSeconds.value = seconds;
   }
+
+  static void showLoading() => globalLoading.value = true;
+  static void hideLoading() => globalLoading.value = false;
 }
 
 Future<void> main() async {
@@ -106,6 +111,18 @@ class LegionFitnessApp extends StatelessWidget {
             ),
             useMaterial3: true,
           ),
+
+          builder: (context, child) {
+            return ValueListenableBuilder<bool>(
+              valueListenable: AppSettings.globalLoading,
+              builder: (context, isLoading, _) {
+                return LoadingOverlay(
+                  isLoading: isLoading,
+                  child: child!,
+                );
+              },
+            );
+          },
 
           home: const AuthGate(),
         );
