@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/progress_log.dart';
+import 'dart:developer' as developer;
 
 final supabase = Supabase.instance.client;
 
@@ -14,13 +15,9 @@ class ProgressService {
         .eq('user_id', user.id)
         .eq('program_id', programId);
 
-    if (response is List) {
-      return response
-          .map((e) => ProgressLog.fromMap(e as Map<String, dynamic>))
-          .toList();
-    }
-
-    return [];
+    return (response as List)
+        .map((e) => ProgressLog.fromMap(e as Map<String, dynamic>))
+        .toList();
   }
 
   static Future<bool> isDayCompleted({
@@ -63,12 +60,12 @@ class ProgressService {
   }) async {
     final user = supabase.auth.currentUser;
     if (user == null) {
-      print('No user logged in, cannot log exercise.');
+      developer.log('No user logged in, cannot log exercise.');
       return;
     }
 
     try {
-      final response = await supabase.from('progress_logs').insert({
+      await supabase.from('progress_logs').insert({
         'user_id': user.id,
         'program_id': programId,
         'exercise_id': exerciseId,
@@ -78,11 +75,8 @@ class ProgressService {
         'weight_used_kg': weightUsedKg,
         'date': DateTime.now().toIso8601String(),
       });
-
-      print('Insert response: $response');
     } catch (e, stack) {
-      print('Error inserting progress log: $e');
-      print(stack);
+      developer.log('Error inserting progress log', error: e, stackTrace: stack);
     }
   }
 }

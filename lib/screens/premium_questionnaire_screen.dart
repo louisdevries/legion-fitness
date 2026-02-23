@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/paid_user_details.dart';
 import '../services/premium_user_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../main.dart'; // Import AppSettings for universal loading
 
 class PremiumQuestionnaireScreen extends StatefulWidget {
   const PremiumQuestionnaireScreen({super.key});
@@ -23,8 +24,6 @@ class _PremiumQuestionnaireScreenState
   String? _goals;
   String? _fitnessType;
   final _injuriesController = TextEditingController();
-
-  bool _isSubmitting = false;
 
   // Example options
   final List<String> genderOptions = ['Male', 'Female'];
@@ -85,7 +84,6 @@ class _PremiumQuestionnaireScreenState
   }
 
   Future<void> _submitForm() async {
-
     final user = Supabase.instance.client.auth.currentUser;
 
     if (user == null) {
@@ -105,6 +103,7 @@ class _PremiumQuestionnaireScreenState
       injuries: _injuriesController.text,
     );
 
+    AppSettings.showLoading(); // Use universal loading overlay
 
     try {
       await PremiumUserService.savePaidUserDetail(detail);
@@ -119,7 +118,7 @@ class _PremiumQuestionnaireScreenState
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+      AppSettings.hideLoading(); // Hide universal loading overlay
     }
   }
 

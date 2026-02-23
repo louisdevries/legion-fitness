@@ -345,8 +345,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
 
   void skipRest() {
     exerciseTimer?.cancel();
-    final nextIndex = currentIndex;
-    final nextSet = currentSet;
+
 
     // Determine what's next
     if (!isLastSet) {

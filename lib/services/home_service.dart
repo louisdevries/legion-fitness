@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/home_state.dart';
+import 'dart:developer' as developer;
 
 class HomeService {
   final supabase = Supabase.instance.client;
@@ -54,7 +55,7 @@ class HomeService {
     try {
       final user = supabase.auth.currentUser;
       if (user == null) {
-        print("No user logged in");
+        developer.log("No user logged in");
         return _ProgressData();
       }
 
@@ -66,12 +67,12 @@ class HomeService {
           .order('week_number', ascending: true)
           .order('day_number', ascending: true);
 
-      if (allExercisesData == null || (allExercisesData as List).isEmpty) {
-        print("No exercises found for program $programId");
+      if ((allExercisesData as List).isEmpty) {
+        developer.log("No exercises found for program $programId");
         return _ProgressData();
       }
 
-      final allExercises = (allExercisesData as List)
+      final allExercises = (allExercisesData)
           .map((e) => {
         'id': e['id'],
         'week': (e['week_number'] as num).toInt(),
@@ -79,15 +80,15 @@ class HomeService {
       })
           .toList();
 
-      print("Total exercises in program: ${allExercises.length}");
+      developer.log("Total exercises in program: ${allExercises.length}");
 
       // Debug: Show distribution of exercises
       final exerciseDistribution = _getExerciseDistribution(allExercises);
-      print("Exercise distribution by week/day: $exerciseDistribution");
+      developer.log("Exercise distribution by week/day: $exerciseDistribution");
 
       // 2️⃣ Group exercises by week-day combination
       final exercisesByDay = _groupExercisesByDay(allExercises);
-      print("Exercise groups: ${exercisesByDay.keys.toList()}");
+      developer.log("Exercise groups: ${exercisesByDay.keys.toList()}");
 
       // 3️⃣ Fetch ALL completed logs with timestamps
       final completedLogsData = await supabase
@@ -102,11 +103,11 @@ class HomeService {
         exercisesByDay,
       );
 
-      print("=== RAW DATA DEBUG ===");
-      print("Total logs fetched: ${completedLogsData.length}");
-      print("Completed count by day: ${completionData.countByDay}");
-      print("First completions: ${completionData.firstCompletionByDay}");
-      print("Unique workout dates: ${completionData.workoutDates}");
+      developer.log("=== RAW DATA DEBUG ===");
+      developer.log("Total logs fetched: ${completedLogsData.length}");
+      developer.log("Completed count by day: ${completionData.countByDay}");
+      developer.log("First completions: ${completionData.firstCompletionByDay}");
+      developer.log("Unique workout dates: ${completionData.workoutDates}");
 
       // 4️⃣ Find the next incomplete workout
       final nextWorkout = await _findNextWorkout(
@@ -125,11 +126,11 @@ class HomeService {
         workoutDates: completionData.workoutDates,
       );
 
-      print("=== PROGRESS DEBUG ===");
-      print("Next workout -> Week: ${nextWorkout.week}, Day: ${nextWorkout.day}");
-      print("Current week (program): ${progressMetrics.currentWeek}");
-      print("This calendar week completed days: ${progressMetrics.completedDays}");
-      print("Program progress: ${(progressMetrics.programProgress * 100).toInt()}%");
+      developer.log("=== PROGRESS DEBUG ===");
+      developer.log("Next workout -> Week: ${nextWorkout.week}, Day: ${nextWorkout.day}");
+      developer.log("Current week (program): ${progressMetrics.currentWeek}");
+      developer.log("This calendar week completed days: ${progressMetrics.completedDays}");
+      developer.log("Program progress: ${(progressMetrics.programProgress * 100).toInt()}%");
 
       return _ProgressData(
         currentWeek: progressMetrics.currentWeek,
@@ -141,8 +142,7 @@ class HomeService {
         weekProgress: progressMetrics.weekProgress,
       );
     } catch (e, stack) {
-      print("ERROR in _loadProgress: $e");
-      print(stack);
+      developer.log("ERROR in _loadProgress", error: e, stackTrace: stack);
       return _ProgressData();
     }
   }
@@ -185,7 +185,7 @@ class HomeService {
       final dayNum = (log['day_number'] as num?)?.toInt();
 
       if (weekNum == null || dayNum == null) {
-        print("Warning: Log missing week or day number: $log");
+        developer.log("Warning: Log missing week or day number: $log");
         continue;
       }
 
@@ -204,7 +204,7 @@ class HomeService {
           workoutDates.add(dateStr);
         }
       } catch (e) {
-        print("Error parsing date for log: $e");
+        developer.log("Error parsing date for log: $e");
       }
     }
 
@@ -221,7 +221,7 @@ class HomeService {
       }
     });
 
-    print("Completed workouts by week: $completedByWeek");
+    developer.log("Completed workouts by week: $completedByWeek");
 
     return _CompletionData(
       countByDay: countByDay,
@@ -248,7 +248,7 @@ class HomeService {
         return aParts[1] - bParts[1];
       });
 
-    print("Checking workout days in order: $sortedKeys");
+    developer.log("Checking workout days in order: $sortedKeys");
 
     // First, check if any Week 1 workouts are incomplete
     for (final key in sortedKeys) {
@@ -256,20 +256,20 @@ class HomeService {
       final completed = completedCountByDay[key] ?? 0;
       final isComplete = completed >= exercises.length;
 
-      print("  $key: ${exercises.length} exercises, $completed completed, complete=$isComplete");
+      developer.log("  $key: ${exercises.length} exercises, $completed completed, complete=$isComplete");
 
       if (!isComplete) {
         final parts = key.split('-');
         nextWeek = int.parse(parts[0]);
         nextDay = int.parse(parts[1]);
-        print("  -> Found incomplete Week 1 workout: Week $nextWeek, Day $nextDay");
+        developer.log("  -> Found incomplete Week 1 workout: Week $nextWeek, Day $nextDay");
         break;
       }
     }
 
     // If Week 1 is complete, determine the next week/day based on program structure
     if (nextWeek == null) {
-      print("Week 1 is complete. Checking for next week...");
+      developer.log("Week 1 is complete. Checking for next week...");
 
       // Get the program info to know total weeks
       final programData = await supabase
@@ -279,7 +279,7 @@ class HomeService {
           .maybeSingle();
 
       final totalWeeks = programData?['weeks'] as int? ?? 6;
-      print("Program has $totalWeeks total weeks");
+      developer.log("Program has $totalWeeks total weeks");
 
       // Find the highest week in completed logs
       int highestCompletedWeek = 1;
@@ -294,11 +294,11 @@ class HomeService {
         }
       }
 
-      print("Highest week with any completion: $highestCompletedWeek");
+      developer.log("Highest week with any completion: $highestCompletedWeek");
 
       // Check which days are complete in the highest week
       final daysPerWeek = exercisesByDay.keys.where((k) => k.startsWith('1-')).length;
-      print("Days per week: $daysPerWeek");
+      developer.log("Days per week: $daysPerWeek");
 
       // Check if the highest week is fully complete
       int completedDaysInHighestWeek = 0;
@@ -310,16 +310,16 @@ class HomeService {
         }
       }
 
-      print("Completed days in week $highestCompletedWeek: $completedDaysInHighestWeek/$daysPerWeek");
+      developer.log("Completed days in week $highestCompletedWeek: $completedDaysInHighestWeek/$daysPerWeek");
 
       if (completedDaysInHighestWeek >= daysPerWeek) {
         // Current week is complete, move to next week
         if (highestCompletedWeek < totalWeeks) {
           nextWeek = highestCompletedWeek + 1;
           nextDay = 1;
-          print("  -> Moving to next week: Week $nextWeek, Day $nextDay");
+          developer.log("  -> Moving to next week: Week $nextWeek, Day $nextDay");
         } else {
-          print("  -> Program completed!");
+          developer.log("  -> Program completed!");
         }
       } else {
         // Find next incomplete day in current week
@@ -329,7 +329,7 @@ class HomeService {
           if (completed == 0) {
             nextWeek = highestCompletedWeek;
             nextDay = day;
-            print("  -> Found incomplete day in week $highestCompletedWeek: Day $nextDay");
+            developer.log("  -> Found incomplete day in week $highestCompletedWeek: Day $nextDay");
             break;
           }
         }
@@ -388,8 +388,8 @@ class HomeService {
         ? completedWorkoutSessions / totalExpectedWorkoutSessions
         : 0.0;
 
-    print("Progress calculation: $completedWorkoutSessions/$totalExpectedWorkoutSessions sessions completed");
-    print("  = ${(programProgress * 100).toInt()}% of $totalWeeks week program");
+    developer.log("Progress calculation: $completedWorkoutSessions/$totalExpectedWorkoutSessions sessions completed");
+    developer.log("  = ${(programProgress * 100).toInt()}% of $totalWeeks week program");
 
     // Calculate THIS CALENDAR WEEK's progress (Mon-Sun)
     final now = DateTime.now();
@@ -443,7 +443,7 @@ class HomeService {
       final exerciseData = programEx['exercises'];
       final exerciseId = programEx['exercise_id'] as int;
 
-      print("Processing exercise ID: $exerciseId");
+      developer.log("Processing exercise ID: $exerciseId");
 
       // Fetch exercise details (sets, reps, duration)
       final detailsData = await supabase
@@ -452,111 +452,48 @@ class HomeService {
           .eq('program_exercise_id', programEx['id'])
           .maybeSingle();
 
-      // Fetch category using direct query
-      final categoryResult = await supabase
-          .from('exercise_category_association')
-          .select('category_id')
+      // Determine category (Warmup, Main, Cooldown)
+      final categoryData = await supabase
+          .from('exercise_category_map')
+          .select('category_id, exercise_categories(name)')
           .eq('exercise_id', exerciseId)
           .maybeSingle();
 
-      String category = 'main'; // Default
-      if (categoryResult != null) {
-        final categoryId = categoryResult['category_id'] as int?;
-        print("  Exercise $exerciseId has category_id: $categoryId");
-
-        if (categoryId == 1) {
-          category = 'warmup';
-        } else if (categoryId == 3) {
-          category = 'cooldown';
-        } else {
-          category = 'main';
-        }
+      String category = "Main Lift";
+      if (categoryData != null) {
+        category = categoryData['exercise_categories']['name'] as String;
+        developer.log("  Exercise $exerciseId has category_id: ${categoryData['category_id']}");
       } else {
-        print("  Exercise $exerciseId has NO category association!");
+        developer.log("  Exercise $exerciseId has NO category association!");
       }
 
-      print("  Final category: $category");
+      developer.log("  Final category: $category");
 
-      // Fetch alternative exercise if it exists
-      final alternativeData = await supabase
-          .from('exercise_alternatives')
-          .select('''
-            alternative_id,
-            exercises!exercise_alternatives_alternative_id_fkey(
-              id,
-              name,
-              media_url,
-              coaching_cues
-            )
-          ''')
-          .eq('exercise_id', exerciseId)
-          .maybeSingle();
-
-      Map<String, dynamic>? alternative;
-      if (alternativeData != null && alternativeData['exercises'] != null) {
-        final altEx = alternativeData['exercises'];
-
-        // Get alternative exercise details if they exist
-        final altDetailsData = await supabase
-            .from('program_exercise_details')
-            .select()
-            .eq('exercise_id', altEx['id'])
-            .eq('program_exercise_id', programEx['id'])
-            .maybeSingle();
-
-        alternative = {
-          'id': altEx['id'],
-          'name': altEx['name'],
-          'media_url': altEx['media_url'],
-          'coaching_cues': altEx['coaching_cues'] ?? '',
-          'sets': altDetailsData?['sets'] ?? detailsData?['sets'] ?? 1,
-          'min_quantity': altDetailsData?['min_quantity'] ?? detailsData?['min_quantity'] ?? 10,
-          'max_quantity': altDetailsData?['max_quantity'] ?? detailsData?['max_quantity'] ?? 15,
-          'duration_type': altDetailsData?['duration_type'] ?? detailsData?['duration_type'] ?? 'reps',
-        };
-      }
-
-      final exercise = {
-        'id': programEx['id'],
-        'program_id': programEx['program_id'],
-        'exercise_id': exerciseId,
-        'week_number': programEx['week_number'],
-        'day_number': programEx['day_number'],
-        'sets': detailsData?['sets'] ?? 1,
-        'reps_min': detailsData?['min_quantity'] ?? 10,
-        'reps_max': detailsData?['max_quantity'] ?? 15,
-        'min_quantity': detailsData?['min_quantity'] ?? 10,
-        'max_quantity': detailsData?['max_quantity'] ?? 15,
-        'name': exerciseData?['name'] ?? 'Exercise',
-        'media_url': exerciseData?['media_url'],
-        'coaching_cues': exerciseData?['coaching_cues'] ?? '',
-        'duration_type': detailsData?['duration_type'] ?? 'reps',
+      exercises.add({
+        'id': exerciseId,
+        'program_exercise_id': programEx['id'],
+        'name': exerciseData['name'],
+        'media_url': exerciseData['media_url'],
+        'coaching_cues': exerciseData['coaching_cues'],
+        'sets': detailsData?['sets'],
+        'reps': detailsData?['reps'],
+        'duration': detailsData?['duration_seconds'],
         'category': category,
-        'alternative': alternative,
-      };
-
-      exercises.add(exercise);
+      });
     }
 
-    print("\n=== CATEGORY SUMMARY ===");
-    final warmups = exercises.where((e) => e['category'] == 'warmup').length;
-    final mains = exercises.where((e) => e['category'] == 'main').length;
-    final cooldowns = exercises.where((e) => e['category'] == 'cooldown').length;
-    print("Warmups: $warmups, Main: $mains, Cooldowns: $cooldowns");
+    // Count categories for debug
+    int warmups = exercises.where((e) => e['category'] == 'Warmup').length;
+    int mains = exercises.where((e) => e['category'] == 'Main Lift').length;
+    int cooldowns = exercises.where((e) => e['category'] == 'Cooldown').length;
 
-    // Sort by category order: warmup -> main -> cooldown
-    exercises.sort((a, b) {
-      final order = {'warmup': 0, 'main': 1, 'cooldown': 2};
-      final aOrder = order[a['category']] ?? 1;
-      final bOrder = order[b['category']] ?? 1;
-      return aOrder.compareTo(bOrder);
-    });
+    developer.log("\n=== CATEGORY SUMMARY ===");
+    developer.log("Warmups: $warmups, Main: $mains, Cooldowns: $cooldowns");
 
     return exercises;
   }
 }
 
-// Helper classes for internal use
 class _ProgressData {
   final int currentWeek;
   final int? nextWeek;
@@ -570,12 +507,11 @@ class _ProgressData {
     this.currentWeek = 1,
     this.nextWeek,
     this.nextDay,
-    Map<int, bool>? completedDays,
-    Set<String>? completedWorkoutDates,
+    this.completedDays = const {},
+    this.completedWorkoutDates = const {},
     this.programProgress = 0.0,
     this.weekProgress = 0.0,
-  })  : completedDays = completedDays ?? {},
-        completedWorkoutDates = completedWorkoutDates ?? {};
+  });
 }
 
 class _CompletionData {
@@ -595,7 +531,6 @@ class _CompletionData {
 class _NextWorkout {
   final int? week;
   final int? day;
-
   _NextWorkout({this.week, this.day});
 }
 

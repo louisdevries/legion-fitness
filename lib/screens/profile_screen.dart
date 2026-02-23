@@ -4,7 +4,6 @@ import '../auth/login_screen.dart';
 import '../main.dart';
 import '../screens/health_profile_screen.dart';
 import '../screens/premium_program_screen.dart';
-import '../services/settings_service.dart';
 import 'rest_timer_settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {

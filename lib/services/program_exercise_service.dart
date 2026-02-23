@@ -1,5 +1,4 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../models/program_exercise_details.dart';
 import 'exercise_detail_service.dart';
 
 final supabase = Supabase.instance.client;

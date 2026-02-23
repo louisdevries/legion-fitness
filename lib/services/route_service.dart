@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -64,7 +65,7 @@ class RouteService {
         }
       }
     } catch (e) {
-      print('OSRM Snapping Error: $e');
+      developer.log('OSRM Snapping Error', error: e);
     }
 
     return points; // Return original if snapping failed

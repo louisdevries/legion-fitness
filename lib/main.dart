@@ -5,7 +5,6 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'widgets/loading_overlay.dart';
 
 // Screens
-import 'auth/login_screen.dart';
 import 'auth/welcome_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/programs_screen.dart';
