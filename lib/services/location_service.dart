@@ -38,7 +38,7 @@ class LocationService {
   }
 
   static Future<void> startBackgroundMode() async {
-    final androidConfig = FlutterBackgroundAndroidConfig(
+    const androidConfig = FlutterBackgroundAndroidConfig(
       notificationTitle: "Outdoor Run",
       notificationText: "Tracking your run in the background",
       notificationImportance: AndroidNotificationImportance.normal,

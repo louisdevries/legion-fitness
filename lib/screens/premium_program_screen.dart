@@ -31,8 +31,8 @@ class PremiumProgramScreen extends StatelessWidget {
                 boxShadow: [
                   BoxShadow(
                     color: theme.brightness == Brightness.dark
-                        ? Colors.black.withOpacity(0.4)
-                        : Colors.black.withOpacity(0.12),
+                        ? Colors.black.withValues(alpha: 0.4)
+                        : Colors.black.withValues(alpha: 0.12),
                     blurRadius: 14,
                     offset: const Offset(0, 6),
                   ),
@@ -52,14 +52,14 @@ class PremiumProgramScreen extends StatelessWidget {
                   Text(
                     "Designed specifically for your goals, schedule, and experience.",
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.7),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                     ),
                   ),
                   const SizedBox(height: 12),
                   Container(
                     height: 150,
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withOpacity(0.1),
+                      color: theme.colorScheme.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Center(
@@ -113,8 +113,8 @@ class PremiumProgramScreen extends StatelessWidget {
                 boxShadow: [
                   BoxShadow(
                     color: theme.brightness == Brightness.dark
-                        ? Colors.black.withOpacity(0.4)
-                        : Colors.black.withOpacity(0.12),
+                        ? Colors.black.withValues(alpha: 0.4)
+                        : Colors.black.withValues(alpha: 0.12),
                     blurRadius: 14,
                     offset: const Offset(0, 6),
                   ),
@@ -134,7 +134,7 @@ class PremiumProgramScreen extends StatelessWidget {
                   Text(
                     "No subscriptions, no auto-renew. Yours forever.",
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.7),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -189,8 +189,8 @@ class PremiumProgramScreen extends StatelessWidget {
         boxShadow: [
           BoxShadow(
             color: theme.brightness == Brightness.dark
-                ? Colors.black.withOpacity(0.35)
-                : Colors.black.withOpacity(0.08),
+                ? Colors.black.withValues(alpha: 0.35)
+                : Colors.black.withValues(alpha: 0.08),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -202,7 +202,7 @@ class PremiumProgramScreen extends StatelessWidget {
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: theme.colorScheme.primary.withOpacity(0.15),
+              color: theme.colorScheme.primary.withValues(alpha: 0.15),
             ),
             child: Icon(icon, color: theme.colorScheme.primary),
           ),
@@ -222,7 +222,7 @@ class PremiumProgramScreen extends StatelessWidget {
                 Text(
                   description,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurface.withOpacity(0.7),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                 ),
               ],

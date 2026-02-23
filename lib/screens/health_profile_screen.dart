@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:developer' as developer;
+import '../main.dart'; // Import AppSettings for universal loading
 
 class HealthProfileScreen extends StatefulWidget {
   const HealthProfileScreen({super.key});
@@ -48,9 +50,11 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
           .eq('user_id', user.id)
           .maybeSingle();
 
-      if (profile != null) {
-        dateOfBirth = DateTime.parse(profile['date_of_birth']);
-        heightController.text = (profile['height_cm'] as num).toString();
+      if (profile != null && mounted) {
+        setState(() {
+          dateOfBirth = DateTime.parse(profile['date_of_birth']);
+          heightController.text = (profile['height_cm'] as num).toString();
+        });
       }
 
       // Load latest weight
@@ -62,13 +66,17 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
           .limit(1)
           .maybeSingle();
 
-      if (latestWeight != null) {
-        latestWeightKg = (latestWeight['weight_kg'] as num).toDouble();
+      if (latestWeight != null && mounted) {
+        setState(() {
+          latestWeightKg = (latestWeight['weight_kg'] as num).toDouble();
+        });
       }
     } catch (e) {
-      print("Load error: $e");
+      developer.log("Load error", error: e);
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
   }
 
@@ -83,6 +91,8 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
 
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
+
+    AppSettings.showLoading(); // Show universal loading overlay
 
     final heightValue = double.tryParse(heightController.text) ?? 0;
     final heightCm = heightUnit == 'ft/in' ? heightValue * 30.48 : heightValue;
@@ -117,21 +127,29 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
           'weight_kg': weightKg,
         });
 
-        latestWeightKg = weightKg;
-        newWeightController.clear();
+        if (mounted) {
+          setState(() {
+            latestWeightKg = weightKg;
+            newWeightController.clear();
+          });
+        }
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Profile saved successfully")),
-      );
-
-      setState(() {});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Profile saved successfully")),
+        );
+        setState(() {});
+      }
     } catch (e, stack) {
-      print("Save error: $e");
-      print(stack);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to save profile: $e")),
-      );
+      developer.log("Save error", error: e, stackTrace: stack);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to save profile: $e")),
+        );
+      }
+    } finally {
+      AppSettings.hideLoading(); // Hide universal loading overlay
     }
   }
 
@@ -196,7 +214,9 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
                     firstDate: DateTime(1900),
                     lastDate: DateTime.now(),
                   );
-                  if (picked != null) setState(() => dateOfBirth = picked);
+                  if (picked != null && mounted) {
+                    setState(() => dateOfBirth = picked);
+                  }
                 },
                 child: AbsorbPointer(
                   child: TextFormField(
@@ -204,6 +224,7 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
                     controller: TextEditingController(
                       text: dateOfBirth != null ? _formatDate(dateOfBirth!) : "",
                     ),
+                    readOnly: true,
                     validator: (_) => dateOfBirth == null ? "Required" : null,
                   ),
                 ),

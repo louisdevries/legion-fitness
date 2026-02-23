@@ -177,7 +177,7 @@ class _HomeScreenState extends State<HomeScreen>
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.18),
+              color: Colors.black.withValues(alpha: 0.18),
               blurRadius: 10,
               offset: const Offset(0, 6),
             ),
@@ -197,7 +197,7 @@ class _HomeScreenState extends State<HomeScreen>
                   begin: Alignment.bottomCenter,
                   end: Alignment.topCenter,
                   colors: [
-                    Colors.black.withOpacity(0.75),
+                    Colors.black.withValues(alpha: 0.75),
                     Colors.transparent,
                   ],
                 ),
@@ -251,12 +251,12 @@ class _HomeScreenState extends State<HomeScreen>
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: theme.colorScheme.onSurface.withOpacity(0.06),
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(
-              theme.brightness == Brightness.dark ? 0.28 : 0.10,
+            color: Colors.black.withValues(
+              alpha: theme.brightness == Brightness.dark ? 0.28 : 0.10,
             ),
             blurRadius: 8,
             offset: const Offset(0, 4),
@@ -288,7 +288,7 @@ class _HomeScreenState extends State<HomeScreen>
                         shape: BoxShape.circle,
                         color: done
                             ? Colors.green
-                            : theme.colorScheme.onSurface.withOpacity(0.15),
+                            : theme.colorScheme.onSurface.withValues(alpha: 0.15),
                         border: isToday
                             ? Border.all(
                           color: theme.colorScheme.primary,
@@ -316,7 +316,7 @@ class _HomeScreenState extends State<HomeScreen>
                         fontSize: 11,
                         color: isToday
                             ? theme.colorScheme.primary
-                            : theme.colorScheme.onSurface.withOpacity(0.7),
+                            : theme.colorScheme.onSurface.withValues(alpha: 0.7),
                         fontWeight:
                         isToday ? FontWeight.bold : FontWeight.normal,
                       ),
@@ -365,16 +365,16 @@ class _HomeScreenState extends State<HomeScreen>
     if (premium) {
       if (theme.brightness == Brightness.dark) {
         cardColor = Colors.orange.shade800; // dark amber for dark mode
-        iconBackgroundColor = Colors.orange.shade600.withOpacity(0.25);
+        iconBackgroundColor = Colors.orange.shade600.withValues(alpha: 0.25);
         iconColor = Colors.orange.shade200;
       } else {
         cardColor = Colors.amber.shade100; // light amber for light mode
-        iconBackgroundColor = Colors.amber.shade600.withOpacity(0.15);
+        iconBackgroundColor = Colors.amber.shade600.withValues(alpha: 0.15);
         iconColor = Colors.amber.shade800;
       }
     } else {
       cardColor = theme.colorScheme.surface;
-      iconBackgroundColor = theme.colorScheme.primary.withOpacity(0.15);
+      iconBackgroundColor = theme.colorScheme.primary.withValues(alpha: 0.15);
       iconColor = theme.colorScheme.primary;
     }
 
@@ -384,12 +384,12 @@ class _HomeScreenState extends State<HomeScreen>
         color: cardColor,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: theme.colorScheme.onSurface.withOpacity(0.06),
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(
-              theme.brightness == Brightness.dark ? 0.30 : 0.12,
+            color: Colors.black.withValues(
+              alpha: theme.brightness == Brightness.dark ? 0.30 : 0.12,
             ),
             blurRadius: 10,
             offset: const Offset(0, 6),
@@ -426,7 +426,7 @@ class _HomeScreenState extends State<HomeScreen>
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: premium && theme.brightness == Brightness.dark
                         ? Colors.white70
-                        : theme.colorScheme.onSurface.withOpacity(0.7),
+                        : theme.colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                 ),
               ],
@@ -435,7 +435,7 @@ class _HomeScreenState extends State<HomeScreen>
           Icon(
             Icons.arrow_forward_ios,
             size: 16,
-            color: theme.colorScheme.onSurface.withOpacity(0.5),
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
           ),
         ],
       ),

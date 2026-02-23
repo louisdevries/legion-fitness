@@ -92,7 +92,7 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
 
             /// EXERCISE DROPDOWN
             DropdownButtonFormField<int>(
-              value: state.exerciseId,
+              initialValue: state.exerciseId,
               hint: const Text("Select exercise"),
               isExpanded: true,
               items: _allExercises
@@ -144,7 +144,7 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
                 SizedBox(
                   width: 80,
                   child: DropdownButtonFormField<String>(
-                    value: state.durationType,
+                    initialValue: state.durationType,
                     isDense: true,
                     isExpanded: true,
                     decoration: const InputDecoration(

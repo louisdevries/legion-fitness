@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -7,7 +8,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 // Use existing models and services
 import '../models/saved_route.dart';
+import '../models/generated_route.dart';
 import '../services/route_service.dart';
+import '../services/route_generator_service.dart';
 
 // Use new utility files
 import '../services/location_service.dart';
@@ -71,9 +74,15 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
   Future<void> _startRun() async {
     await LocationService.startBackgroundMode();
 
-    final plannedRoute = _state.selectedRoute != null
-        ? List<LatLng>.from(_state.routePoints)
-        : <LatLng>[];
+    // Use either a selected saved route, a generated route, or an empty list
+    final List<LatLng> plannedPoints;
+    if (_state.selectedGeneratedRoute != null) {
+      plannedPoints = List<LatLng>.from(_state.selectedGeneratedRoute!.points);
+    } else if (_state.selectedRoute != null) {
+      plannedPoints = List<LatLng>.from(_state.routePoints);
+    } else {
+      plannedPoints = <LatLng>[];
+    }
 
     setState(() {
       _state = _state.copyWith(
@@ -82,7 +91,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
         elapsedSeconds: 0,
         totalDistanceMeters: 0,
         actualRunPath: [],
-        plannedRoute: plannedRoute,
+        plannedRoute: plannedPoints,
         routePoints: [],
       );
     });
@@ -161,6 +170,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
         totalDistanceMeters: _state.isDrawing ? _state.totalDistanceMeters : 0,
         clearSelectedRoute: !_state.isDrawing,
         plannedRoute: [],
+        clearGeneratedRoutes: true,
       );
     });
 
@@ -271,17 +281,135 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
         });
       }
     } catch (e) {
-      print('Error snapping to roads: $e');
+      developer.log('Error snapping to roads', error: e);
     } finally {
       AppSettings.hideLoading();
     }
+  }
+
+  // ==================== GENERATED ROUTES ====================
+
+  Future<void> _promptGenerateRoute() async {
+    if (_state.currentPosition == null) {
+      _showSnackBar("Getting your location...");
+      await _initializeLocation();
+      if (_state.currentPosition == null) return;
+    }
+
+    final distanceController = TextEditingController();
+    final double? targetDistance = await showDialog<double>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Generate Run Route"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("How far would you like to run today?"),
+            const SizedBox(height: 16),
+            TextField(
+              controller: distanceController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: "Distance (km)",
+                suffixText: "km",
+                border: OutlineInputBorder(),
+              ),
+              autofocus: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () {
+              final d = double.tryParse(distanceController.text);
+              Navigator.pop(context, d);
+            },
+            child: const Text("Generate"),
+          ),
+        ],
+      ),
+    );
+
+    if (targetDistance != null && targetDistance > 0) {
+      _generateRoutes(targetDistance);
+    }
+  }
+
+  Future<void> _generateRoutes(double distanceKm) async {
+    setState(() => _state = _state.copyWith(isGenerating: true));
+    AppSettings.showLoading();
+
+    try {
+      final routes = await RouteGeneratorService.generateRoutesByDistance(
+        start: _state.currentPosition!,
+        targetDistanceKm: distanceKm,
+      );
+
+      if (mounted) {
+        setState(() {
+          _state = _state.copyWith(
+            generatedRoutes: routes,
+            isGenerating: false,
+            // Automatically select the first option
+            selectedGeneratedRoute: routes.isNotEmpty ? routes.first : null,
+            routePoints: routes.isNotEmpty ? routes.first.points : [],
+            totalDistanceMeters: routes.isNotEmpty ? routes.first.distanceKm * 1000 : 0,
+          );
+        });
+
+        if (routes.isNotEmpty) {
+          _fitMapToPoints(routes.first.points);
+          _showSnackBar("Found ${routes.length} route options!");
+        } else {
+          _showSnackBar("Could not find suitable routes nearby.");
+        }
+      }
+    } catch (e) {
+      developer.log("Generation error", error: e);
+      _showSnackBar("Failed to generate routes: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _state = _state.copyWith(isGenerating: false));
+      }
+      AppSettings.hideLoading();
+    }
+  }
+
+  void _onGeneratedRouteSelected(GeneratedRoute? route) {
+    setState(() {
+      _state = _state.copyWith(
+        selectedGeneratedRoute: route,
+        routePoints: route != null ? List.from(route.points) : [],
+        totalDistanceMeters: route != null ? route.distanceKm * 1000 : 0,
+      );
+    });
+
+    if (route != null) {
+      _fitMapToPoints(route.points);
+    }
+  }
+
+  void _fitMapToPoints(List<LatLng> points) {
+    if (points.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _mapController.fitCamera(
+        CameraFit.bounds(
+          bounds: LatLngBounds.fromPoints(points),
+          padding: const EdgeInsets.all(70),
+        ),
+      );
+    });
   }
 
   // ==================== ROUTE MANAGEMENT ====================
 
   Future<void> _saveRoute() async {
     if (_state.routePoints.isEmpty) {
-      _showSnackBar('Draw a route first!');
+      _showSnackBar('Draw or generate a route first!');
       return;
     }
 
@@ -343,6 +471,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
               routePoints: [],
               rawDrawnPoints: [],
               totalDistanceMeters: 0,
+              clearGeneratedRoutes: true,
             );
           });
           _showSnackBar('Route "$name" saved successfully!');
@@ -359,18 +488,12 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
         selectedRoute: route,
         routePoints: route != null ? List.from(route.points) : [],
         totalDistanceMeters: route != null ? route.distanceKm * 1000 : 0,
+        clearGeneratedRoutes: true,
       );
     });
 
     if (route != null && route.points.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _mapController.fitCamera(
-          CameraFit.bounds(
-            bounds: LatLngBounds.fromPoints(route.points),
-            padding: const EdgeInsets.all(70),
-          ),
-        );
-      });
+      _fitMapToPoints(route.points);
     }
   }
 
@@ -412,6 +535,11 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
       title: const Text("Outdoor Run"),
       actions: [
         IconButton(
+          icon: const Icon(Icons.auto_fix_high),
+          onPressed: _promptGenerateRoute,
+          tooltip: 'Generate Route',
+        ),
+        IconButton(
           icon: Icon(_state.isDrawing ? Icons.check : Icons.edit),
           onPressed: _state.isDrawing ? _saveRoute : _toggleDrawing,
           tooltip: _state.isDrawing ? 'Save Route' : 'Draw Route',
@@ -421,27 +549,32 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
   }
 
   Widget? _buildInfoBanner() {
-    if (!_state.isRunning && !_state.isDrawing && _state.savedRoutes.isNotEmpty) {
-      return Container(
-        height: 60,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: DropdownButton<SavedRoute>(
-          isExpanded: true,
-          hint: const Text("Select a saved route"),
-          value: _state.selectedRoute,
-          items: _state.savedRoutes.map((r) => DropdownMenuItem(
-            value: r,
-            child: Text("${r.name} (${r.distanceKm.toStringAsFixed(2)} km)"),
-          )).toList(),
-          onChanged: _onRouteSelected,
-        ),
-      );
+    if (_state.isRunning) {
+      if (_state.plannedRoute.isNotEmpty) {
+        return Container(
+          padding: const EdgeInsets.all(8),
+          color: Colors.blue.withValues(alpha: 0.1),
+          child: Row(
+            children: [
+              const Icon(Icons.route, color: Colors.blue),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "Following planned route - ghost path shown in light blue",
+                  style: TextStyle(color: Colors.blue.shade900, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+      return null;
     }
 
     if (_state.isDrawing) {
       return Container(
         padding: const EdgeInsets.all(8),
-        color: Colors.green.shade50,
+        color: Colors.green.withValues(alpha: 0.1),
         child: Row(
           children: [
             const Icon(Icons.info_outline, color: Colors.green),
@@ -457,26 +590,39 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
       );
     }
 
-    if (_state.isRunning && _state.plannedRoute.isNotEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(8),
-        color: Colors.blue.shade50,
-        child: Row(
-          children: [
-            const Icon(Icons.route, color: Colors.blue),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                "Following saved route - ghost path shown in light blue",
-                style: TextStyle(color: Colors.blue.shade900, fontSize: 12),
-              ),
+    // Selector for saved or generated routes
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: Theme.of(context).colorScheme.surface,
+      child: Column(
+        children: [
+          if (_state.generatedRoutes.isNotEmpty) ...[
+            DropdownButton<GeneratedRoute>(
+              isExpanded: true,
+              hint: const Text("Select generated option"),
+              value: _state.selectedGeneratedRoute,
+              items: _state.generatedRoutes.map((r) => DropdownMenuItem(
+                value: r,
+                child: Text("${r.label} (${r.distanceKm.toStringAsFixed(2)} km)"),
+              )).toList(),
+              onChanged: _onGeneratedRouteSelected,
             ),
+            const SizedBox(height: 4),
           ],
-        ),
-      );
-    }
-
-    return null;
+          if (_state.savedRoutes.isNotEmpty)
+            DropdownButton<SavedRoute>(
+              isExpanded: true,
+              hint: const Text("Select a saved route"),
+              value: _state.selectedRoute,
+              items: _state.savedRoutes.map((r) => DropdownMenuItem(
+                value: r,
+                child: Text("${r.name} (${r.distanceKm.toStringAsFixed(2)} km)"),
+              )).toList(),
+              onChanged: _onRouteSelected,
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _buildMap() {
@@ -498,16 +644,16 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
             urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
             userAgentPackageName: 'com.yourapp.app',
           ),
-          // Ghost route layer
+          // Ghost route layer (Planned)
           if (_state.isRunning && _state.plannedRoute.isNotEmpty)
             PolylineLayer(
               polylines: [
                 Polyline(
                   points: _state.plannedRoute,
                   strokeWidth: 6,
-                  color: Colors.lightBlue.withOpacity(0.4),
+                  color: Colors.lightBlue.withValues(alpha: 0.4),
                   borderStrokeWidth: 2,
-                  borderColor: Colors.white.withOpacity(0.6),
+                  borderColor: Colors.white.withValues(alpha: 0.6),
                 ),
               ],
             ),
@@ -522,7 +668,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                 ),
               ],
             ),
-          // Regular route layer
+          // Regular route layer (Previewing)
           if (!_state.isRunning && _state.routePoints.isNotEmpty)
             PolylineLayer(
               polylines: [
@@ -551,7 +697,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
     ];
 
     // Drawing mode markers
-    if (_state.routePoints.isNotEmpty && _state.isDrawing) {
+    if (_state.routePoints.isNotEmpty && (_state.isDrawing || _state.selectedGeneratedRoute != null)) {
       markers.addAll([
         Marker(
           point: _state.routePoints.first,
@@ -583,7 +729,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
           height: 25,
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.lightBlue.withOpacity(0.7),
+              color: Colors.lightBlue.withValues(alpha: 0.7),
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white, width: 2),
             ),
@@ -596,7 +742,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
           height: 25,
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.lightBlue.withOpacity(0.7),
+              color: Colors.lightBlue.withValues(alpha: 0.7),
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white, width: 2),
             ),

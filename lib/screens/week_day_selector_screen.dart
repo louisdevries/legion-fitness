@@ -265,7 +265,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                         : cs.surface;
 
                     final textColor = locked
-                        ? cs.onSurface.withOpacity(0.4)
+                        ? cs.onSurface.withValues(alpha: 0.4)
                         : selected
                         ? cs.onPrimaryContainer
                         : cs.onSurface;
@@ -279,7 +279,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                           color: bgColor,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: cs.onSurface.withOpacity(0.08),
+                            color: cs.onSurface.withValues(alpha: 0.08),
                           ),
                         ),
                         child: Center(
@@ -319,7 +319,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                       color: bgColor,
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color: cs.onSurface.withOpacity(0.08),
+                        color: cs.onSurface.withValues(alpha: 0.08),
                       ),
                     ),
                     child: ListTile(
@@ -327,7 +327,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                         "Workout Day $day",
                         style: TextStyle(
                           color: locked
-                              ? cs.onSurface.withOpacity(0.4)
+                              ? cs.onSurface.withValues(alpha: 0.4)
                               : cs.onSurface,
                         ),
                       ),
@@ -336,7 +336,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                           : locked
                           ? Icon(Icons.lock,
                           color:
-                          cs.onSurface.withOpacity(0.35))
+                          cs.onSurface.withValues(alpha: 0.35))
                           : const Icon(Icons.arrow_forward_ios, size: 16),
                       onTap: locked
                           ? null

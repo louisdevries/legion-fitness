@@ -1,15 +1,17 @@
 import 'package:latlong2/latlong.dart';
 import '../models/saved_route.dart';
+import '../models/generated_route.dart';
 
 class RunState {
   final bool isRunning;
   final bool isPaused;
   final bool isDrawing;
+  final bool isGenerating;
 
-  final List<LatLng> routePoints; // Current route being drawn/run
-  final List<LatLng> plannedRoute; // Ghost route to follow (saved route)
-  final List<LatLng> actualRunPath; // Actual path taken during run
-  final List<LatLng> rawDrawnPoints; // Store raw drawn points before smoothing
+  final List<LatLng> routePoints;
+  final List<LatLng> plannedRoute;
+  final List<LatLng> actualRunPath;
+  final List<LatLng> rawDrawnPoints;
 
   final double totalDistanceMeters;
   final int elapsedSeconds;
@@ -20,10 +22,15 @@ class RunState {
 
   final bool isCurrentlyDrawing;
 
+  // Route generation
+  final List<GeneratedRoute> generatedRoutes;
+  final GeneratedRoute? selectedGeneratedRoute;
+
   RunState({
     this.isRunning = false,
     this.isPaused = false,
     this.isDrawing = false,
+    this.isGenerating = false,
     List<LatLng>? routePoints,
     List<LatLng>? plannedRoute,
     List<LatLng>? actualRunPath,
@@ -34,16 +41,20 @@ class RunState {
     List<SavedRoute>? savedRoutes,
     this.selectedRoute,
     this.isCurrentlyDrawing = false,
+    List<GeneratedRoute>? generatedRoutes,
+    this.selectedGeneratedRoute,
   })  : routePoints = routePoints ?? [],
         plannedRoute = plannedRoute ?? [],
         actualRunPath = actualRunPath ?? [],
         rawDrawnPoints = rawDrawnPoints ?? [],
-        savedRoutes = savedRoutes ?? [];
+        savedRoutes = savedRoutes ?? [],
+        generatedRoutes = generatedRoutes ?? [];
 
   RunState copyWith({
     bool? isRunning,
     bool? isPaused,
     bool? isDrawing,
+    bool? isGenerating,
     List<LatLng>? routePoints,
     List<LatLng>? plannedRoute,
     List<LatLng>? actualRunPath,
@@ -55,21 +66,32 @@ class RunState {
     SavedRoute? selectedRoute,
     bool? isCurrentlyDrawing,
     bool clearSelectedRoute = false,
+    List<GeneratedRoute>? generatedRoutes,
+    GeneratedRoute? selectedGeneratedRoute,
+    bool clearGeneratedRoutes = false,
   }) {
     return RunState(
       isRunning: isRunning ?? this.isRunning,
       isPaused: isPaused ?? this.isPaused,
       isDrawing: isDrawing ?? this.isDrawing,
+      isGenerating: isGenerating ?? this.isGenerating,
       routePoints: routePoints ?? this.routePoints,
       plannedRoute: plannedRoute ?? this.plannedRoute,
       actualRunPath: actualRunPath ?? this.actualRunPath,
       rawDrawnPoints: rawDrawnPoints ?? this.rawDrawnPoints,
-      totalDistanceMeters: totalDistanceMeters ?? this.totalDistanceMeters,
+      totalDistanceMeters:
+      totalDistanceMeters ?? this.totalDistanceMeters,
       elapsedSeconds: elapsedSeconds ?? this.elapsedSeconds,
       currentPosition: currentPosition ?? this.currentPosition,
       savedRoutes: savedRoutes ?? this.savedRoutes,
-      selectedRoute: clearSelectedRoute ? null : (selectedRoute ?? this.selectedRoute),
-      isCurrentlyDrawing: isCurrentlyDrawing ?? this.isCurrentlyDrawing,
+      selectedRoute:
+      clearSelectedRoute ? null : (selectedRoute ?? this.selectedRoute),
+      isCurrentlyDrawing:
+      isCurrentlyDrawing ?? this.isCurrentlyDrawing,
+      generatedRoutes:
+      clearGeneratedRoutes ? [] : (generatedRoutes ?? this.generatedRoutes),
+      selectedGeneratedRoute:
+      selectedGeneratedRoute ?? this.selectedGeneratedRoute,
     );
   }
 
@@ -81,7 +103,8 @@ class RunState {
 
   double get distanceKm => totalDistanceMeters / 1000.0;
 
-  double get pace => distanceKm > 0 ? elapsedSeconds / 60 / distanceKm : 0;
+  double get pace =>
+      distanceKm > 0 ? elapsedSeconds / 60 / distanceKm : 0;
 
   String get formattedPace {
     return pace == 0 ? "--" : "${pace.toStringAsFixed(1)} min/km";

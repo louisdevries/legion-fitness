@@ -27,7 +27,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadUser() async {
     final user = AuthService.currentUser;
     final name = await AuthService.getUserName();
-    final email = await AuthService.getUserEmail();
+    final email = AuthService.getUserEmail(); // Removed await as it's a String?, not a Future
 
     if (!mounted) return;
     setState(() {
@@ -163,7 +163,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildAccountHeader() {
     return Container(
       padding: const EdgeInsets.all(20),
-      color: Theme.of(context).colorScheme.surfaceVariant,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: Row(
         children: [
           const CircleAvatar(

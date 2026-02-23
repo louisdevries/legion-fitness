@@ -94,7 +94,7 @@ class _PremiumQuestionnaireScreenState
     }
 
     final detail = PaidUserDetail(
-      userId: user.id, // ✅ UUID string
+      userId: user.id,
       age: int.tryParse(_ageController.text),
       gender: _gender,
       experience: _experience,
@@ -202,11 +202,13 @@ class _PremiumQuestionnaireScreenState
             inputWidget: Column(
               children: genderOptions
                   .map((g) => RadioListTile<String>(
-                title: Text(g),
-                value: g,
-                groupValue: _gender,
-                onChanged: (v) => setState(() => _gender = v),
-              ))
+                        title: Text(g),
+                        value: g,
+                        // ignore: deprecated_member_use
+                        groupValue: _gender,
+                        // ignore: deprecated_member_use
+                        onChanged: (v) => setState(() => _gender = v),
+                      ))
                   .toList(),
             ),
           ),
@@ -215,11 +217,13 @@ class _PremiumQuestionnaireScreenState
             inputWidget: Column(
               children: experienceOptions
                   .map((e) => RadioListTile<String>(
-                title: Text(e),
-                value: e,
-                groupValue: _experience,
-                onChanged: (v) => setState(() => _experience = v),
-              ))
+                        title: Text(e),
+                        value: e,
+                        // ignore: deprecated_member_use
+                        groupValue: _experience,
+                        // ignore: deprecated_member_use
+                        onChanged: (v) => setState(() => _experience = v),
+                      ))
                   .toList(),
             ),
           ),
@@ -228,11 +232,13 @@ class _PremiumQuestionnaireScreenState
             inputWidget: Column(
               children: goalsOptions
                   .map((g) => RadioListTile<String>(
-                title: Text(g),
-                value: g,
-                groupValue: _goals,
-                onChanged: (v) => setState(() => _goals = v),
-              ))
+                        title: Text(g),
+                        value: g,
+                        // ignore: deprecated_member_use
+                        groupValue: _goals,
+                        // ignore: deprecated_member_use
+                        onChanged: (v) => setState(() => _goals = v),
+                      ))
                   .toList(),
             ),
           ),
@@ -241,11 +247,13 @@ class _PremiumQuestionnaireScreenState
             inputWidget: Column(
               children: fitnessTypeOptions
                   .map((f) => RadioListTile<String>(
-                title: Text(f),
-                value: f,
-                groupValue: _fitnessType,
-                onChanged: (v) => setState(() => _fitnessType = v),
-              ))
+                        title: Text(f),
+                        value: f,
+                        // ignore: deprecated_member_use
+                        groupValue: _fitnessType,
+                        // ignore: deprecated_member_use
+                        onChanged: (v) => setState(() => _fitnessType = v),
+                      ))
                   .toList(),
             ),
           ),
