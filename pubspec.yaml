@@ -12,15 +12,15 @@ dependencies:
     sdk: flutter
 
   shared_preferences: ^2.2.2
-  flutter_secure_storage: ^9.0.0
+  flutter_secure_storage: ^10.0.0
   http: ^1.2.0
-  google_sign_in: ^6.2.1
-  flutter_lints: ^2.0.0
+  google_sign_in: ^7.2.0
+  flutter_lints: ^6.0.0
   supabase_flutter: ^2.12.0
   audioplayers: ^6.5.1
   cached_network_image: ^3.3.1
-  geolocator: ^10.0.0
-  flutter_map: ^6.0.0
+  geolocator: ^14.0.2
+  flutter_map: ^8.2.2
   latlong2: ^0.9.0
   fl_chart: ^1.1.1
   flutter_localizations:
@@ -31,6 +31,8 @@ dependencies:
 
 
   cupertino_icons: ^1.0.8
+  share_plus: ^12.0.2
+  screenshot: ^3.0.0
 
 dev_dependencies:
   flutter_test:

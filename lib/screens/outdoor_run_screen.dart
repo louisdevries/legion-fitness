@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 // Use existing models and services
 import '../models/saved_route.dart';
 import '../models/generated_route.dart';
+import '../services/graphhopper_route_service.dart';
 import '../services/route_service.dart';
 import '../services/route_generator_service.dart';
 
@@ -28,7 +29,7 @@ class OutdoorRunScreen extends StatefulWidget {
 
 class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
   final MapController _mapController = MapController();
-  StreamSubscription<Position>? _positionStream;
+  StreamSubscription<LatLng>? _positionStream;
   Timer? _timer;
   MapGestureHandler? _gestureHandler;
 
@@ -344,7 +345,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
     AppSettings.showLoading();
 
     try {
-      final routes = await RouteGeneratorService.generateRoutesByDistance(
+      final routes = await GraphHopperRouteService.generateRoundTrip(
         start: _state.currentPosition!,
         targetDistanceKm: distanceKm,
       );
@@ -354,7 +355,6 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
           _state = _state.copyWith(
             generatedRoutes: routes,
             isGenerating: false,
-            // Automatically select the first option
             selectedGeneratedRoute: routes.isNotEmpty ? routes.first : null,
             routePoints: routes.isNotEmpty ? routes.first.points : [],
             totalDistanceMeters: routes.isNotEmpty ? routes.first.distanceKm * 1000 : 0,

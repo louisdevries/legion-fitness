@@ -5,7 +5,8 @@ import 'dart:developer' as developer;
 final supabase = Supabase.instance.client;
 
 class ProgressService {
-  static Future<List<ProgressLog>> getUserProgress(int programId) async {
+  // ✅ FIXED: no programId filter
+  static Future<List<ProgressLog>> getUserProgress() async {
     final user = supabase.auth.currentUser;
     if (user == null) return [];
 
@@ -13,7 +14,7 @@ class ProgressService {
         .from('progress_logs')
         .select()
         .eq('user_id', user.id)
-        .eq('program_id', programId);
+        .order('date'); // optional but useful
 
     return (response as List)
         .map((e) => ProgressLog.fromMap(e as Map<String, dynamic>))
