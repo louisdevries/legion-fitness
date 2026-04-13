@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Legion Fitness</string>
+    <string name="health_permissions_rationale">
+        Legion Fitness reads your step count from Health Connect to display
+        your daily activity on the home screen. No data is uploaded or shared.
+    </string>
+</resources>

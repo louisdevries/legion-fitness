@@ -7,7 +7,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:share_plus/share_plus.dart';
-
 import '../models/progress_log.dart';
 import '../models/exercise.dart';
 import '../models/programs.dart';
@@ -18,7 +17,6 @@ import 'progress_report_screen.dart';
 
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
-
   @override
   State<ProgressScreen> createState() => _ProgressScreenState();
 }
@@ -26,60 +24,62 @@ class ProgressScreen extends StatefulWidget {
 class _ProgressScreenState extends State<ProgressScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  late ScrollController _scrollController;
   bool isLoading = true;
-
   List<ProgressLog> logs = [];
   List<Exercise> exercises = [];
   List<Program> programs = [];
   Map<int, Program> programMap = {};
-
   List<_WeightLog> weightLogs = [];
   List<ProgressPhoto> photos = [];
-
   final ImagePicker _picker = ImagePicker();
+  ProgressPhoto? compareStart;
+
+  // ── Removed scroll-shrink logic; replaced with swipe-to-dismiss ──
+  bool _bannerVisible = true;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() => setState(() {}));
-
+    _scrollController = ScrollController();
     loadData();
     loadLocalPhotos();
   }
 
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> loadData() async {
     setState(() => isLoading = true);
-
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
       setState(() => isLoading = false);
       return;
     }
-
     final programLogs = await ProgressService.getUserProgress();
     final exerciseList = await ExerciseService.getAllExercises();
-
     final programData =
     await Supabase.instance.client.from('fitness_programs').select();
     final loadedPrograms =
     programData.map<Program>((p) => Program.fromMap(p)).toList();
-
     programMap = {for (final p in loadedPrograms) p.id: p};
-
     final data = await Supabase.instance.client
         .from('weight_logs')
         .select()
         .eq('user_id', user.id)
         .order('logged_at');
-
     final weights = data
         .map<_WeightLog>((e) => _WeightLog(
       date: DateTime.parse(e['logged_at']),
       weight: (e['weight_kg'] as num).toDouble(),
     ))
         .toList();
-
     if (mounted) {
       setState(() {
         logs = programLogs;
@@ -102,7 +102,6 @@ class _ProgressScreenState extends State<ProgressScreen>
     final dir = await _photoDir();
     final metaFile = File('${dir.path}/meta.json');
     if (!metaFile.existsSync()) return;
-
     final data = jsonDecode(await metaFile.readAsString()) as List;
     if (mounted) {
       setState(() {
@@ -120,7 +119,6 @@ class _ProgressScreenState extends State<ProgressScreen>
   Future<void> _savePhotoMeta() async {
     final dir = await _photoDir();
     final metaFile = File('${dir.path}/meta.json');
-
     await metaFile.writeAsString(jsonEncode(
       photos
           .map((p) => {
@@ -133,12 +131,15 @@ class _ProgressScreenState extends State<ProgressScreen>
   }
 
   Future<void> addPhoto() async {
-    final picked = await _picker.pickImage(source: ImageSource.camera);
+    final picked = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 60,
+      maxWidth: 1080,
+      maxHeight: 1920,
+    );
     if (picked == null) return;
-
     final user = Supabase.instance.client.auth.currentUser;
     double? latestWeight;
-
     if (user != null) {
       final data = await Supabase.instance.client
           .from('weight_logs')
@@ -146,196 +147,128 @@ class _ProgressScreenState extends State<ProgressScreen>
           .eq('user_id', user.id)
           .order('logged_at', ascending: false)
           .limit(1);
-
       if (data.isNotEmpty) {
         latestWeight = (data[0]['weight_kg'] as num).toDouble();
       }
     }
-
     final dir = await _photoDir();
     final file =
     File('${dir.path}/${DateTime.now().millisecondsSinceEpoch}.jpg');
     await File(picked.path).copy(file.path);
-
     photos.add(ProgressPhoto(
       file: file,
       date: DateTime.now(),
       weight: latestWeight,
     ));
-
     await _savePhotoMeta();
     if (mounted) setState(() {});
   }
 
-  Future<void> _addOrUpdateWeight() async {
-    final controller = TextEditingController();
+  Future<void> _shareTransformation(List<ProgressPhoto> pair) async {
+    final bytes0 = await pair[0].file.readAsBytes();
+    final bytes1 = await pair[1].file.readAsBytes();
+    final img1 = await decodeImageFromList(bytes0);
+    final img2 = await decodeImageFromList(bytes1);
 
-    final result = await showDialog<double>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Log your weight'),
-        content: TextField(
-          controller: controller,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(
-            labelText: 'Weight (kg)',
-            hintText: 'e.g. 75.5',
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          ElevatedButton(
-              onPressed: () {
-                final val = double.tryParse(controller.text);
-                if (val != null && val >= 30) Navigator.pop(context, val);
-              },
-              child: const Text('Save')),
-        ],
-      ),
+    const maxW = 800.0;
+    double scale1 = img1.width > maxW ? maxW / img1.width : 1.0;
+    double scale2 = img2.width > maxW ? maxW / img2.width : 1.0;
+
+    final w1 = (img1.width * scale1).round();
+    final h1 = (img1.height * scale1).round();
+    final w2 = (img2.width * scale2).round();
+    final h2 = (img2.height * scale2).round();
+
+    final totalWidth = w1 + w2;
+    final totalHeight = h1 > h2 ? h1 : h2;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder,
+        Rect.fromLTWH(0, 0, totalWidth.toDouble(), totalHeight.toDouble()));
+
+    canvas.save();
+    canvas.scale(scale1);
+    canvas.drawImage(img1, Offset.zero, Paint());
+    canvas.restore();
+
+    canvas.save();
+    canvas.translate(w1.toDouble(), 0);
+    canvas.scale(scale2);
+    canvas.drawImage(img2, Offset.zero, Paint());
+    canvas.restore();
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(totalWidth, totalHeight);
+    final byteData =
+    await image.toByteData(format: ui.ImageByteFormat.png);
+    final pngBytes = byteData!.buffer.asUint8List();
+
+    final tempDir = await getTemporaryDirectory();
+    final file = File('${tempDir.path}/transform.png');
+    await file.writeAsBytes(pngBytes);
+
+    await SharePlus.instance.share(
+      ShareParams(files: [XFile(file.path)]),
     );
-
-    if (result == null) return;
-
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return;
-
-    await Supabase.instance.client.from('weight_logs').insert({
-      'user_id': user.id,
-      'weight_kg': result,
-      'logged_at': DateTime.now().toIso8601String(),
-    });
-
-    if (mounted) {
-      setState(() {
-        weightLogs.add(_WeightLog(date: DateTime.now(), weight: result));
-      });
-    }
   }
 
-  Future<void> _shareBestTransformation(List<ProgressPhoto> bestPair) async {
-    if (bestPair.isEmpty) return;
-
-    final includeLabels = await showDialog<bool>(
+  Future<void> _deletePhoto(ProgressPhoto photo) async {
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Include weight labels?'),
-        content:
-        const Text('Do you want to include weight and date labels on the shared image?'),
+      builder: (_) => AlertDialog(
+        title: const Text('Delete photo?'),
+        content: const Text('This cannot be undone.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('No')),
-          ElevatedButton(
+              child: const Text('Cancel')),
+          TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Yes')),
+              child:
+              const Text('Delete', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
+    if (confirmed != true) return;
+    await photo.file.delete();
+    photos.remove(photo);
+    await _savePhotoMeta();
+    if (mounted) setState(() {});
+  }
 
-    final messenger = ScaffoldMessenger.of(context);
-
-    try {
-      // Load images
-      final img1 = await decodeImageFromList(bestPair[0].file.readAsBytesSync());
-      final img2 = await decodeImageFromList(bestPair[1].file.readAsBytesSync());
-
-      final width = img1.width + img2.width;
-      final height = img1.height > img2.height ? img1.height : img2.height;
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(
-        recorder,
-        Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
-      );
-
-      // Draw first image
-      canvas.drawImage(img1, Offset.zero, Paint());
-      // Draw second image right next to first
-      canvas.drawImage(img2, Offset(img1.width.toDouble(), 0), Paint());
-
-      if (includeLabels ?? false) {
-        final textPainter = TextPainter(
-          textDirection: TextDirection.ltr,
-        );
-
-        // First image labels
-        textPainter.text = TextSpan(
-          text:
-          '${bestPair[0].weight?.toStringAsFixed(1) ?? ''}kg\n${bestPair[0].date.day}/${bestPair[0].date.month}/${bestPair[0].date.year}',
-          style: const TextStyle(color: Colors.white, fontSize: 24),
-        );
-        textPainter.layout();
-        textPainter.paint(canvas, Offset(10, 10));
-
-        // Second image labels
-        textPainter.text = TextSpan(
-          text:
-          '${bestPair[1].weight?.toStringAsFixed(1) ?? ''}kg\n${bestPair[1].date.day}/${bestPair[1].date.month}/${bestPair[1].date.year}',
-          style: const TextStyle(color: Colors.white, fontSize: 24),
-        );
-        textPainter.layout();
-        textPainter.paint(canvas, Offset(img1.width + 10, 10));
-      }
-
-      final picture = recorder.endRecording();
-      final fused = await picture.toImage(width, height);
-      final byteData = await fused.toByteData(format: ui.ImageByteFormat.png);
-      final bytes = byteData!.buffer.asUint8List();
-
-      final tempDir = await getTemporaryDirectory();
-      final fusedFile = File('${tempDir.path}/transformation.png');
-      await fusedFile.writeAsBytes(bytes);
-
-      await SharePlus.instance.share(
-        ShareParams(
-          text: 'Check out my fitness transformation! 💪',
-          files: [XFile(fusedFile.path)],
+  void _openFullScreen(ProgressPhoto photo) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(backgroundColor: Colors.black),
+          body: Center(
+            child: InteractiveViewer(
+              child: Image.file(photo.file),
+            ),
+          ),
         ),
-      );
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Failed to share: $e')));
-    }
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final user = Supabase.instance.client.auth.currentUser;
-
     if (isLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
-
     if (user == null) {
       return const Scaffold(
-        body: Center(
-          child: Text('Sign up or log in to track your progress'),
-        ),
+        body: Center(child: Text('Login required')),
       );
     }
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Progress'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.analytics),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ProgressReportScreen(
-                    photos: photos,
-                    weightLogs: weightLogs,
-                  ),
-                ),
-              );
-            },
-          )
-        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -347,34 +280,26 @@ class _ProgressScreenState extends State<ProgressScreen>
       ),
       floatingActionButton: _tabController.index == 2
           ? FloatingActionButton(
-          onPressed: addPhoto, child: const Icon(Icons.camera_alt))
+        onPressed: addPhoto,
+        child: const Icon(Icons.camera_alt),
+      )
           : null,
       body: TabBarView(
         controller: _tabController,
-        children: [_overviewTab(), _exerciseTab(), _photosTab()],
+        children: [
+          _overviewTab(),
+          const Center(child: Text('Exercise view')),
+          _photosTab(),
+        ],
       ),
     );
   }
 
   Widget _overviewTab() {
     if (weightLogs.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text('No weight data yet'),
-            const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: _addOrUpdateWeight,
-              child: const Text('Add Weight'),
-            ),
-          ],
-        ),
-      );
+      return const Center(child: Text('No weight data yet'));
     }
-
     final sorted = [...weightLogs]..sort((a, b) => a.date.compareTo(b.date));
-
     return Padding(
       padding: const EdgeInsets.all(16),
       child: LineChart(
@@ -394,202 +319,342 @@ class _ProgressScreenState extends State<ProgressScreen>
     );
   }
 
-  Widget _exerciseTab() {
-    return const Center(child: Text('Exercise view here'));
+  Widget _photosTab() {
+    final sortedPhotos = [...photos]
+      ..sort((a, b) => b.date.compareTo(a.date));
+    final bestPair = _getBestTransformation();
+
+    return Stack(
+      children: [
+        CustomScrollView(
+          controller: _scrollController,
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            // ── Swipe-to-dismiss transformation banner ──
+            if (bestPair != null && _bannerVisible)
+              SliverToBoxAdapter(
+                child: Dismissible(
+                  key: const ValueKey('transformation_banner'),
+                  direction: DismissDirection.up,
+                  onDismissed: (_) =>
+                      setState(() => _bannerVisible = false),
+                  child: _buildBestTransformation(bestPair),
+                ),
+              ),
+            ..._buildGroupedPhotoSlivers(sortedPhotos),
+          ],
+        ),
+        if (compareStart != null)
+          Positioned(
+            bottom: 80,
+            left: 16,
+            right: 16,
+            child: Material(
+              color: Colors.black87,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 10),
+                child: Row(
+                  children: [
+                    const Icon(Icons.compare, color: Colors.white),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Now tap a second photo to compare',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () =>
+                          setState(() => compareStart = null),
+                      child: const Text('Cancel',
+                          style: TextStyle(color: Colors.redAccent)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
-  Widget _photosTab() {
-    if (photos.isEmpty) {
-      return const Center(
-        child: Text('No progress photos yet\nTap the camera below'),
+  Widget _buildBestTransformation(List<ProgressPhoto> pair) {
+    final diff = pair[1].weight != null && pair[0].weight != null
+        ? (pair[1].weight! - pair[0].weight!)
+        : null;
+    final days = pair[1].date.difference(pair[0].date).inDays;
+
+    Widget weightDiffBadge() {
+      if (diff == null) return const SizedBox.shrink();
+      final lost = diff < 0;
+      final label = '${lost ? '▼' : '▲'} ${diff.abs().toStringAsFixed(1)} kg';
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: lost
+                ? [const Color(0xFF43E97B), const Color(0xFF38F9D7)]
+                : [const Color(0xFFFA709A), const Color(0xFFFEE140)],
+          ),
+          borderRadius: BorderRadius.circular(30),
+          boxShadow: [
+            BoxShadow(
+              color: (lost ? Colors.greenAccent : Colors.orangeAccent)
+                  .withOpacity(0.5),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: 17,
+            shadows: [Shadow(blurRadius: 4, color: Colors.black38)],
+          ),
+        ),
       );
     }
 
-    final bestPair = _getBestTransformation();
-
-    return Column(
-      children: [
-        if (bestPair != null)
-          Container(
-            margin: const EdgeInsets.all(12),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.deepPurple,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              children: [
-                const Text(
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+      decoration: BoxDecoration(
+        color: Colors.deepPurple,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── Title row + swipe hint + share ──
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
                   '🔥 Best Transformation',
-                  style: TextStyle(color: Colors.white),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
                 ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  height: 160,
-                  child: Row(
+              ),
+              // Subtle "swipe up to dismiss" hint
+              const Text(
+                'swipe up to hide',
+                style: TextStyle(color: Colors.white38, fontSize: 11),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(Icons.share, color: Colors.white),
+                onPressed: () => _shareTransformation(pair),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // ── Images ──
+          SizedBox(
+            height: 180,
+            child: Row(
+              children: [
+                // Before
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
                     children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => PhotoCompareScreen(
-                                  before: bestPair[0].file,
-                                  after: bestPair[1].file,
-                                ),
-                              ),
-                            );
-                          },
-                          child:
-                          Image.file(bestPair[0].file, fit: BoxFit.cover),
-                        ),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.file(pair[0].file, fit: BoxFit.cover),
                       ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Image.file(bestPair[1].file, fit: BoxFit.cover),
+                      if (pair[0].weight != null)
+                        Positioned(
+                          top: 6,
+                          left: 6,
+                          child: _label(
+                              '${pair[0].weight!.toStringAsFixed(1)} kg'),
+                        ),
+                      Positioned(
+                        bottom: 6,
+                        left: 6,
+                        child: _label(
+                            '${pair[0].date.day}/${pair[0].date.month}/${pair[0].date.year}'),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  '${bestPair[0].weight ?? ''}kg → ${bestPair[1].weight ?? ''}kg',
-                  style: const TextStyle(color: Colors.white),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.share, color: Colors.white),
-                      onPressed: () => _shareBestTransformation(bestPair),
-                    ),
-                  ],
+                const SizedBox(width: 6),
+                // After
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.file(pair[1].file, fit: BoxFit.cover),
+                      ),
+                      if (pair[1].weight != null)
+                        Positioned(
+                          top: 6,
+                          left: 6,
+                          child: _label(
+                              '${pair[1].weight!.toStringAsFixed(1)} kg'),
+                        ),
+                      Positioned(
+                        bottom: 6,
+                        left: 6,
+                        child: _label(
+                            '${pair[1].date.day}/${pair[1].date.month}/${pair[1].date.year}'),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
-        Expanded(
-          child: GridView.builder(
-            padding: const EdgeInsets.all(12),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-            ),
-            itemCount: photos.length,
-            itemBuilder: (_, i) {
-              return GestureDetector(
-                onTap: () async {
-                  final selected = await showModalBottomSheet<int>(
-                    context: context,
-                    builder: (_) {
-                      return GridView.builder(
-                        padding: const EdgeInsets.all(12),
-                        gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                        ),
-                        itemCount: photos.length,
-                        itemBuilder: (_, j) {
-                          return GestureDetector(
-                            onTap: () => Navigator.pop(context, j),
-                            child:
-                            Image.file(photos[j].file, fit: BoxFit.cover),
-                          );
-                        },
-                      );
-                    },
-                  );
+          const SizedBox(height: 12),
+          // ── Weight diff badge + days ──
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              weightDiffBadge(),
+              const SizedBox(width: 10),
+              Text(
+                'in $days days',
+                style:
+                const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
-                  if (selected == null || selected == i) return;
-
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => PhotoCompareScreen(
-                        before: photos[i].file,
-                        after: photos[selected].file,
-                      ),
-                    ),
-                  );
-                },
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.file(
-                          photos[i].file,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ),
-                    if (photos[i].weight != null)
-                      Positioned(
-                        top: 4,
-                        left: 4,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          color: Colors.black54,
-                          child: Text(
-                            '${photos[i].weight}kg',
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 10),
-                          ),
-                        ),
-                      ),
-                    Positioned(
-                      bottom: 4,
-                      left: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        color: Colors.black54,
-                        child: Text(
-                          '${photos[i].date.day}/${photos[i].date.month}/${photos[i].date.year}',
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 10),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: GestureDetector(
-                        onTap: () async {
-                          photos[i].file.deleteSync();
-                          photos.removeAt(i);
-                          await _savePhotoMeta();
-                          if (mounted) setState(() {});
-                        },
-                        child: const Icon(Icons.delete, color: Colors.white),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
+  List<Widget> _buildGroupedPhotoSlivers(List<ProgressPhoto> photos) {
+    final Map<String, List<ProgressPhoto>> grouped = {};
+    for (final p in photos) {
+      final key =
+          "${p.date.year}-${p.date.month.toString().padLeft(2, '0')}";
+      grouped.putIfAbsent(key, () => []).add(p);
+    }
+    final List<Widget> slivers = [];
+    for (final entry in grouped.entries) {
+      slivers.add(SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 16, 12, 6),
+          child: Text(
+            entry.key,
+            style: const TextStyle(
+                fontWeight: FontWeight.bold, fontSize: 15),
           ),
         ),
-      ],
+      ));
+      slivers.add(SliverGrid(
+        delegate: SliverChildBuilderDelegate(
+              (_, i) => _buildPhotoTile(entry.value[i]),
+          childCount: entry.value.length,
+        ),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: 2,
+          mainAxisSpacing: 2,
+        ),
+      ));
+    }
+    return slivers;
+  }
+
+  Widget _buildPhotoTile(ProgressPhoto photo) {
+    final isSelected = compareStart == photo;
+    return GestureDetector(
+      onTap: () {
+        if (compareStart != null) {
+          final first = compareStart!;
+          setState(() => compareStart = null);
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PhotoCompareScreen(
+                before: first.file,
+                after: photo.file,
+              ),
+            ),
+          );
+        } else {
+          _openFullScreen(photo);
+        }
+      },
+      onLongPress: () => setState(() => compareStart = photo),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.file(photo.file, fit: BoxFit.cover),
+          if (photo.weight != null)
+            Positioned(
+              top: 4,
+              left: 4,
+              child: _label('${photo.weight!.toStringAsFixed(1)} kg'),
+            ),
+          Positioned(
+            bottom: 4,
+            left: 4,
+            child: _label(
+                '${photo.date.day}/${photo.date.month}/${photo.date.year}'),
+          ),
+          // Delete button
+          Positioned(
+            top: 2,
+            right: 2,
+            child: GestureDetector(
+              onTap: () => _deletePhoto(photo),
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                padding: const EdgeInsets.all(3),
+                child: const Icon(Icons.close,
+                    color: Colors.white, size: 14),
+              ),
+            ),
+          ),
+          if (isSelected)
+            Positioned.fill(
+              child: Container(
+                color: Colors.blue.withOpacity(0.4),
+                child: const Icon(Icons.compare_arrows,
+                    color: Colors.white, size: 32),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _label(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      color: Colors.black54,
+      child: Text(
+        text,
+        style: const TextStyle(color: Colors.white, fontSize: 10),
+      ),
     );
   }
 
   List<ProgressPhoto>? _getBestTransformation() {
     if (photos.length < 2) return null;
-
     double bestScore = 0;
     List<ProgressPhoto>? bestPair;
-
     for (int i = 0; i < photos.length; i++) {
       for (int j = i + 1; j < photos.length; j++) {
         final a = photos[i];
         final b = photos[j];
         if (a.weight == null || b.weight == null) continue;
-
         final diff = (b.weight! - a.weight!).abs();
         if (diff > bestScore) {
           bestScore = diff;
@@ -597,7 +662,6 @@ class _ProgressScreenState extends State<ProgressScreen>
         }
       }
     }
-
     return bestPair;
   }
 }
@@ -606,13 +670,11 @@ class ProgressPhoto {
   final File file;
   final DateTime date;
   final double? weight;
-
   ProgressPhoto({required this.file, required this.date, this.weight});
 }
 
 class _WeightLog {
   final DateTime date;
   final double weight;
-
   _WeightLog({required this.date, required this.weight});
 }
