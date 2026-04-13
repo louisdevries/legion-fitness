@@ -4,6 +4,7 @@ import '../auth/login_screen.dart';
 import '../main.dart';
 import '../screens/health_profile_screen.dart';
 import '../screens/premium_program_screen.dart';
+import '../screens/workout_reminder_screen.dart';   // ← new import
 import 'rest_timer_settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -27,7 +28,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadUser() async {
     final user = AuthService.currentUser;
     final name = await AuthService.getUserName();
-    final email = AuthService.getUserEmail(); // Removed await as it's a String?, not a Future
+    final email = AuthService.getUserEmail();
 
     if (!mounted) return;
     setState(() {
@@ -115,7 +116,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ],
                 ),
               );
-
               if (selected != null) {
                 await AppSettings.setThemeMode(selected);
               }
@@ -135,7 +135,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
             },
           ),
 
-          /// 🔹 PREMIUM PROGRAM LINK
+          // ── Workout Reminder ──────────────────────────────────
+          _buildTile(
+            icon: Icons.notifications_active,
+            title: "Workout Reminders",
+            subtitle: "Schedule weekly exercise alerts",
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const WorkoutReminderScreen(),
+                ),
+              );
+            },
+          ),
+
           _buildSectionHeader("Premium"),
           _buildTile(
             icon: Icons.workspace_premium,

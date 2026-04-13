@@ -11,7 +11,7 @@ dependencies:
   flutter:
     sdk: flutter
 
-  shared_preferences: ^2.2.2
+  shared_preferences: ^2.3.0
   flutter_secure_storage: ^10.0.0
   http: ^1.2.0
   google_sign_in: ^7.2.0
@@ -34,6 +34,8 @@ dependencies:
   share_plus: ^12.0.2
   screenshot: ^3.0.0
   health: ^13.3.1
+  timezone: ^0.11.0
+
 
 dev_dependencies:
   flutter_test:
