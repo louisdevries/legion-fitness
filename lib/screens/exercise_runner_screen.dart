@@ -1,10 +1,18 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
-import '../services/progress_service.dart';
+import '../models/exercise_runner_state.dart';
+import '../services/exercise_runner_service.dart';
+import '../utils/exercise_category_utils.dart';
+import '../utils/exercise_runner_utils.dart';
+import 'widgets/exercise_runner/category_badge.dart';
+import 'widgets/exercise_runner/coaching_cue_box.dart';
+import 'widgets/exercise_runner/exercise_media.dart';
+import 'widgets/exercise_runner/progress_ring.dart';
+import 'widgets/exercise_runner/rest_controls.dart';
+import 'widgets/exercise_runner/timer_adjust_controls.dart';
+import 'widgets/exercise_runner/workout_progress_bar.dart';
 
 class ExerciseRunnerScreen extends StatefulWidget {
   final List<Map<String, dynamic>> exercises;
@@ -27,427 +35,322 @@ class ExerciseRunnerScreen extends StatefulWidget {
 }
 
 class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
-  int currentIndex = 0;
-  int currentSet = 1;
-
-  Timer? exerciseTimer;
-  int remainingSeconds = 0;
-  int totalSeconds = 1;
-
-  bool isPaused = false;
-  bool isResting = false;
-  bool mediaReady = false;
-  bool showCategoryHeader = false;
-  bool usingAlternative = false;
-
-  int lastSelectedReps = 1;
-  int lastSelectedSeconds = 0;
-
-  late final AudioPlayer tickPlayer;
-  late final AudioPlayer dingPlayer;
-
+  late ExerciseRunnerState _s;
   late List<Map<String, dynamic>> exercises;
+  late final ExerciseRunnerService _svc;
+  Timer? _timer;
 
-  Map<String, dynamic> get currentExercise => exercises[currentIndex];
-  Map<String, dynamic>? get currentAlternative => currentExercise['alternative'] as Map<String, dynamic>?;
+  // ── Convenience getters ──────────────────────────────────────────
 
-  int get totalSets => currentExercise['sets'] as int? ?? 1;
+  Map<String, dynamic> get _currentExercise => exercises[_s.currentIndex];
 
-  bool get isLastSet => currentSet >= totalSets;
-  bool get isLastExercise => currentIndex >= exercises.length - 1;
+  Map<String, dynamic>? get _currentAlternative =>
+      _currentExercise['alternative'] as Map<String, dynamic>?;
+
+  Map<String, dynamic> get _activeExercise =>
+      _s.usingAlternative && _currentAlternative != null
+          ? _currentAlternative!
+          : _currentExercise;
+
+  int get _totalSets => _currentExercise['sets'] as int? ?? 1;
+  bool get _isLastSet => _s.currentSet >= _totalSets;
+  bool get _isLastExercise => _s.currentIndex >= exercises.length - 1;
+
+  bool get _isTimed => ExerciseRunnerUtils.isTimedExercise(_activeExercise);
+  String get _category =>
+      ExerciseCategoryUtils.resolveCategory(_currentExercise);
+
+  bool _isNewCategory() {
+    if (_s.currentIndex == 0) return true;
+
+    final prev = ExerciseRunnerUtils.resolveCategory(
+        exercises[_s.currentIndex - 1]);
+
+    final current = _category;
+
+    return prev != current;
+  }
+
+  String _getCategoryLabel(String category) {
+    switch (category) {
+      case 'warmup':
+        return 'Warmup';
+      case 'cooldown':
+        return 'Cooldown';
+      default:
+        return 'Main Workout';
+    }
+  }
+
+  Color _getCategoryColor(String category) {
+    switch (category) {
+      case 'warmup':
+        return Colors.orange;
+      case 'cooldown':
+        return Colors.green;
+      default:
+        return Colors.blue;
+    }
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
+    _s = const ExerciseRunnerState();
+    _svc = ExerciseRunnerService();
 
-    exercises = widget.exercises.map((e) {
-      return {
-        ...e,
-        'exercise_id': e['exercise_id'] ?? e['id'],
-        'program_id': widget.programId,
-        'week_number': widget.weekNumber,
-        'day_number': widget.dayNumber,
-      };
+    exercises = widget.exercises.map((e) => {
+      ...e,
+      'exercise_id': e['exercise_id'] ?? e['id'],
+      'program_id': widget.programId,
+      'week_number': widget.weekNumber,
+      'day_number': widget.dayNumber,
     }).toList();
 
-    tickPlayer = AudioPlayer();
-    dingPlayer = AudioPlayer();
+    // ✅ SORT HERE
+    exercises.sort((a, b) {
+      int getOrder(Map<String, dynamic> ex) {
+        final cat = ExerciseRunnerUtils
+            .resolveCategory(ex)
+            .toLowerCase();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkAndShowCategoryHeader();
+        if (cat.contains('warm')) return 0;
+        if (cat.contains('main')) return 1;
+        if (cat.contains('cool')) return 2;
+        return 1; // default to main
+      }
+
+      return getOrder(a).compareTo(getOrder(b));
     });
+
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _startCurrentExercise());
   }
 
-  // ------------------ CATEGORY HEADER ------------------
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _svc.dispose();
+    super.dispose();
+  }
 
-  void _checkAndShowCategoryHeader() {
-    final currentCategory = currentExercise['category'] as String? ?? 'main';
+  // ── Exercise start ───────────────────────────────────────────────
 
-    // Check if this is the first exercise in this category
-    bool isFirstInCategory = true;
-    if (currentIndex > 0) {
-      final previousCategory = exercises[currentIndex - 1]['category'] as String? ?? 'main';
-      isFirstInCategory = currentCategory != previousCategory;
-    }
+  Future<void> _startCurrentExercise() async {
+    _timer?.cancel();
+    _s = _s.copyWith(
+      isResting: false,
+      isPaused: false,
+      mediaReady: false,
+    );
+    if (mounted) setState(() {});
 
-    if (isFirstInCategory) {
-      setState(() => showCategoryHeader = true);
+    await _svc.precacheMedia(
+        ExerciseRunnerUtils.getMediaUrl(_activeExercise), context);
 
-      // Show category header dialog
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          title: Text(_getCategoryTitle(currentCategory)),
-          content: Text(_getCategoryDescription(currentCategory)),
-          actions: [
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                setState(() => showCategoryHeader = false);
-                startCurrentExercise();
-              },
-              child: const Text("Start"),
-            ),
-          ],
-        ),
+    if (_isTimed) {
+      final secs = ExerciseRunnerUtils.getQuantity(_activeExercise);
+      _s = _s.copyWith(
+        mediaReady: true,
+        lastSelectedSeconds: secs,
+        totalSeconds: secs,
+        remainingSeconds: secs,
       );
     } else {
-      startCurrentExercise();
-    }
-  }
-
-  String _getCategoryTitle(String category) {
-    switch (category.toLowerCase()) {
-      case 'warmup':
-        return '🔥 Warm-up';
-      case 'cooldown':
-        return '❄️ Cool-down';
-      case 'main':
-      default:
-        return '💪 Main Workout';
-    }
-  }
-
-  String _getCategoryDescription(String category) {
-    switch (category.toLowerCase()) {
-      case 'warmup':
-        return 'Prepare your body for the workout ahead';
-      case 'cooldown':
-        return 'Wind down and stretch to aid recovery';
-      case 'main':
-      default:
-        return 'Time to work! Give it your all';
-    }
-  }
-
-  // ------------------ HELPERS ------------------
-
-  int getMinQuantity() {
-    final ex = usingAlternative && currentAlternative != null ? currentAlternative! : currentExercise;
-    return ex['min_quantity'] as int? ?? 0;
-  }
-
-  int getMaxQuantity() {
-    final ex = usingAlternative && currentAlternative != null ? currentAlternative! : currentExercise;
-    return ex['max_quantity'] as int? ?? getMinQuantity();
-  }
-
-  int getQuantity() {
-    final minQ = getMinQuantity();
-    final maxQ = getMaxQuantity();
-    return max(1, ((minQ + maxQ) / 2).round());
-  }
-
-  String getQuantityDisplay() {
-    final minQ = getMinQuantity();
-    final maxQ = getMaxQuantity();
-
-    if (minQ == maxQ) {
-      return '$minQ';
-    } else {
-      return '$minQ-$maxQ';
-    }
-  }
-
-  bool isTimedExercise() {
-    final ex = usingAlternative && currentAlternative != null ? currentAlternative! : currentExercise;
-    final t = (ex['duration_type'] ?? '').toString().toLowerCase();
-    return t.contains('sec');
-  }
-
-  String getCurrentExerciseName() {
-    final ex = usingAlternative && currentAlternative != null ? currentAlternative! : currentExercise;
-    return ex['name'] as String? ?? 'Exercise';
-  }
-
-  String? getCurrentMediaUrl() {
-    final ex = usingAlternative && currentAlternative != null ? currentAlternative! : currentExercise;
-    return ex['media_url'] as String?;
-  }
-
-  String getCurrentCoachingCues() {
-    final ex = usingAlternative && currentAlternative != null ? currentAlternative! : currentExercise;
-    return ex['coaching_cues'] as String? ?? '';
-  }
-
-  // ------------------ EXERCISE START ------------------
-
-  Future<void> startCurrentExercise() async {
-    exerciseTimer?.cancel();
-    isResting = false;
-    isPaused = false;
-    mediaReady = false;
-    if (mounted) setState(() {});
-
-    final url = getCurrentMediaUrl();
-    if (url != null && url.isNotEmpty) {
-      try {
-        await precacheImage(CachedNetworkImageProvider(url), context);
-      } catch (_) {}
-    }
-
-    mediaReady = true;
-
-    if (isTimedExercise()) {
-      lastSelectedSeconds = getQuantity();
-      totalSeconds = lastSelectedSeconds;
-      remainingSeconds = lastSelectedSeconds;
-    } else {
-      lastSelectedReps = getQuantity();
-      totalSeconds = 0;
-      remainingSeconds = 0;
+      _s = _s.copyWith(
+        mediaReady: true,
+        lastSelectedReps: ExerciseRunnerUtils.getQuantity(_activeExercise),
+        totalSeconds: 0,
+        remainingSeconds: 0,
+      );
     }
 
     if (mounted) setState(() {});
 
-    if (isTimedExercise()) {
-      exerciseTimer = Timer.periodic(const Duration(seconds: 1), (t) async {
-        if (!mounted) {
-          t.cancel();
-          return;
-        }
+    if (_isTimed) {
+      _timer = Timer.periodic(const Duration(seconds: 1), (t) async {
+        if (!mounted) { t.cancel(); return; }
+        if (_s.isPaused) return;
 
-        if (isPaused) return;
-
-        if (remainingSeconds <= 1) {
+        if (_s.remainingSeconds <= 1) {
           t.cancel();
-          await dingPlayer.play(AssetSource('sounds/ding.wav'));
-          await completeExerciseSet(logSet: true);
+          await _svc.playDing();
+          await _completeSet(logSet: true);
         } else {
-          if (mounted) setState(() => remainingSeconds--);
-          if (remainingSeconds <= 5) {
-            await tickPlayer.play(AssetSource('sounds/tick.wav'));
-          }
+          setState(() => _s = _s.copyWith(
+              remainingSeconds: _s.remainingSeconds - 1));
+          if (_s.remainingSeconds <= 5) await _svc.playTick();
         }
       });
     }
   }
 
-  // ------------------ LOGGING ------------------
+  // ── Complete set ─────────────────────────────────────────────────
 
-  Future<void> logSetToDatabase() async {
-    final ex = currentExercise;
-
-    await ProgressService.logExercise(
-      programId: ex['program_id'],
-      exerciseId: ex['exercise_id'],
-      weekNumber: ex['week_number'],
-      dayNumber: ex['day_number'],
-      repsCompleted: isTimedExercise() ? lastSelectedSeconds : lastSelectedReps,
-      weightUsedKg: ex['weight_used_kg'] != null
-          ? (ex['weight_used_kg'] as num).toDouble()
-          : null,
-    );
-  }
-
-  // ------------------ COMPLETE SET ------------------
-
-  Future<void> completeExerciseSet({required bool logSet}) async {
-    exerciseTimer?.cancel();
+  Future<void> _completeSet({required bool logSet}) async {
+    _timer?.cancel();
 
     if (logSet) {
-      if (!isTimedExercise()) {
-        int selectedReps = lastSelectedReps;
+      int reps = _s.lastSelectedReps;
+
+      if (!_isTimed) {
         await showModalBottomSheet(
           context: context,
           isDismissible: false,
-          builder: (_) => SizedBox(
-            height: 320,
-            child: Column(
-              children: [
-                const SizedBox(height: 12),
-                const Text("How many reps did you do?",
-                    style: TextStyle(fontSize: 18)),
-                Expanded(
-                  child: CupertinoPicker(
-                    itemExtent: 40,
-                    scrollController: FixedExtentScrollController(
-                      initialItem: selectedReps - 1,
-                    ),
-                    onSelectedItemChanged: (v) => selectedReps = v + 1,
-                    children: List.generate(
-                      50,
-                          (i) => Center(child: Text("${i + 1}")),
-                    ),
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text("Confirm"),
-                ),
-              ],
-            ),
+          builder: (_) => _RepsPicker(
+            initialReps: reps,
+            onConfirm: (v) => reps = v,
           ),
         );
-        lastSelectedReps = selectedReps;
+        _s = _s.copyWith(lastSelectedReps: reps);
       } else {
-        lastSelectedSeconds = totalSeconds;
+        _s = _s.copyWith(lastSelectedSeconds: _s.totalSeconds);
       }
 
-      await logSetToDatabase();
+      await _svc.logSet(
+        exercise: _currentExercise,
+        isTimed: _isTimed,
+        lastSelectedSeconds: _s.lastSelectedSeconds,
+        lastSelectedReps: _s.lastSelectedReps,
+      );
+
+      // ✅ ADD IT HERE (after successful log)
+      _s = _s.copyWith(
+        completedSets: _s.completedSets + 1,
+      );
     }
 
-    if (!isLastSet) {
-      startRest(nextExerciseIndex: currentIndex, nextSet: currentSet + 1);
-    } else if (!isLastExercise) {
-      // Reset to main exercise for next exercise
-      usingAlternative = false;
-      startRest(nextExerciseIndex: currentIndex + 1, nextSet: 1);
+    if (!_isLastSet) {
+      _startRest(nextIndex: _s.currentIndex, nextSet: _s.currentSet + 1);
+    } else if (!_isLastExercise) {
+      _s = _s.copyWith(usingAlternative: false);
+      _startRest(nextIndex: _s.currentIndex + 1, nextSet: 1);
     } else {
-      await showWorkoutComplete();
+      if (_s.completedSets >= _totalRequiredSets) {
+        await _showWorkoutComplete();
+      } else {
+        // User skipped or exited early → just go back silently
+        if (mounted) Navigator.pop(context);
+      }
     }
   }
+  int get _totalRequiredSets {
+    return exercises.fold(0, (sum, ex) {
+      return sum + ((ex['sets'] as int?) ?? 1);
+    });
+  }
+  // ── Rest ─────────────────────────────────────────────────────────
 
-  // ------------------ REST ------------------
-
-  void startRest({required int nextExerciseIndex, required int nextSet}) {
-    exerciseTimer?.cancel();
-    isResting = true;
-    remainingSeconds = widget.restSeconds;
-    totalSeconds = widget.restSeconds;
+  void _startRest({required int nextIndex, required int nextSet}) {
+    _timer?.cancel();
+    _s = _s.copyWith(
+      isResting: true,
+      remainingSeconds: widget.restSeconds,
+      totalSeconds: widget.restSeconds,
+    );
     if (mounted) setState(() {});
 
-    exerciseTimer = Timer.periodic(const Duration(seconds: 1), (t) async {
-      if (!mounted) {
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      if (_s.remainingSeconds <= 1) {
         t.cancel();
-        return;
-      }
-
-      if (remainingSeconds <= 1) {
-        t.cancel();
-        _proceedToNextExercise(nextExerciseIndex, nextSet);
+        _proceedToNext(nextIndex, nextSet);
       } else {
-        if (mounted) setState(() => remainingSeconds--);
+        setState(() =>
+        _s = _s.copyWith(remainingSeconds: _s.remainingSeconds - 1));
       }
     });
   }
 
-  void skipRest() {
-    exerciseTimer?.cancel();
-
-
-    // Determine what's next
-    if (!isLastSet) {
-      _proceedToNextExercise(currentIndex, currentSet + 1);
-    } else if (!isLastExercise) {
-      _proceedToNextExercise(currentIndex + 1, 1);
+  void _skipRest() {
+    _timer?.cancel();
+    if (!_isLastSet) {
+      _proceedToNext(_s.currentIndex, _s.currentSet + 1);
+    } else if (!_isLastExercise) {
+      _proceedToNext(_s.currentIndex + 1, 1);
     }
   }
 
-  void _proceedToNextExercise(int nextExerciseIndex, int nextSet) {
-    currentIndex = nextExerciseIndex;
-    currentSet = nextSet;
-
-    // Reset to main exercise for new exercise
-    if (nextSet == 1) {
-      usingAlternative = false;
-    }
-
-    // Check if we need to show category header
-    if (nextSet == 1) {
-      _checkAndShowCategoryHeader();
-    } else {
-      startCurrentExercise();
-    }
+  void _proceedToNext(int nextIndex, int nextSet) {
+    _s = _s.copyWith(
+      currentIndex: nextIndex,
+      currentSet: nextSet,
+      usingAlternative: nextSet == 1 ? false : _s.usingAlternative,
+    );
+    _startCurrentExercise();
   }
 
-  // ------------------ SWITCH TO ALTERNATIVE ------------------
+  // ── Alternative ──────────────────────────────────────────────────
 
-  void switchToAlternative() {
-    if (currentAlternative == null) return;
-
-    setState(() {
-      usingAlternative = !usingAlternative;
-    });
-
-    // Restart the current set with the alternative exercise
-    startCurrentExercise();
+  void _switchAlternative() {
+    if (_currentAlternative == null) return;
+    setState(() =>
+    _s = _s.copyWith(usingAlternative: !_s.usingAlternative));
+    _startCurrentExercise();
   }
 
-  // ------------------ TIMER ADJUST ------------------
+  // ── Timer adjust ─────────────────────────────────────────────────
 
-  void adjustTimer(int delta) {
-    setState(() {
-      totalSeconds = max(5, totalSeconds + delta);
-      remainingSeconds = min(remainingSeconds + delta, totalSeconds);
-      lastSelectedSeconds = totalSeconds;
-    });
+  void _adjustTimer(int delta) {
+    final newTotal = max(5, _s.totalSeconds + delta);
+    setState(() => _s = _s.copyWith(
+      totalSeconds: newTotal,
+      remainingSeconds: min(_s.remainingSeconds + delta, newTotal),
+      lastSelectedSeconds: newTotal,
+    ));
   }
 
-  // ------------------ COMPLETE ------------------
+  // ── Workout complete ─────────────────────────────────────────────
 
-  Future<void> showWorkoutComplete() async {
+  Future<void> _showWorkoutComplete() async {
     await showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
-        title: const Text("Workout Complete 💪"),
-        content: const Text("Great job! Your workout has been logged."),
+        title: const Text('Workout Complete 💪'),
+        content: const Text('Great job! Your workout has been logged.'),
         actions: [
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
               Navigator.pop(context);
             },
-            child: const Text("Finish"),
+            child: const Text('Finish'),
           ),
         ],
       ),
     );
   }
 
-  @override
-  void dispose() {
-    exerciseTimer?.cancel();
-    tickPlayer.dispose();
-    dingPlayer.dispose();
-    super.dispose();
-  }
-
-  // ------------------ UI ------------------
+  // ── Build ────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final isTimed = isTimedExercise();
-    final exerciseName = getCurrentExerciseName();
-    final coachingCues = getCurrentCoachingCues();
-    final hasAlternative = currentAlternative != null;
-
-    final progress = totalSeconds == 0
-        ? 0.0
-        : (remainingSeconds / totalSeconds).clamp(0.0, 1.0);
+    final exerciseName =
+    ExerciseRunnerUtils.getName(_activeExercise);
+    final coachingCues =
+    ExerciseRunnerUtils.getCoachingCues(_activeExercise);
+    final mediaUrl =
+    ExerciseRunnerUtils.getMediaUrl(_activeExercise);
+    final quantityDisplay =
+    ExerciseRunnerUtils.getQuantityDisplay(_activeExercise);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(isResting ? "Rest" : exerciseName),
-        backgroundColor: isResting ? Colors.green : null,
+        title: Text(_s.isResting ? 'Rest' : exerciseName),
+        backgroundColor: _s.isResting ? Colors.green : null,
         actions: [
-          if (!isResting && hasAlternative)
+          if (!_s.isResting && _currentAlternative != null)
             IconButton(
-              icon: Icon(usingAlternative ? Icons.swap_horiz : Icons.sync_alt),
-              tooltip: usingAlternative ? 'Switch to main' : 'Try easier version',
-              onPressed: switchToAlternative,
+              icon: Icon(_s.usingAlternative
+                  ? Icons.swap_horiz
+                  : Icons.sync_alt),
+              tooltip: _s.usingAlternative
+                  ? 'Switch to main'
+                  : 'Try easier version',
+              onPressed: _switchAlternative,
             ),
         ],
       ),
@@ -455,42 +358,55 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // Category badge
-            if (!isResting)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: _getCategoryColor(currentExercise['category'] as String? ?? 'main'),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  _getCategoryTitle(currentExercise['category'] as String? ?? 'main'),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
+            if (!_s.isResting) CategoryBadge(category: _category),
+            if (!_s.isResting)
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 400),
+                child: _isNewCategory()
+                    ? Column(
+                  key: ValueKey(_category),
+                  children: [
+                    Text(
+                      _getCategoryLabel(_category),
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: _getCategoryColor(_category),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Divider(thickness: 2),
+                  ],
+                )
+                    : const SizedBox.shrink(),
+              ),
+            if (!_s.isResting)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: WorkoutProgressBar(
+                  completed: _s.completedSets,
+                  total: _totalRequiredSets,
                 ),
               ),
-
             const SizedBox(height: 8),
 
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  "Set $currentSet / $totalSets",
+                  'Set ${_s.currentSet} / $_totalSets',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
-                if (usingAlternative)
+                if (_s.usingAlternative)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.orange.shade100,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Text(
-                      "Easier Version",
+                      'Easier Version',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -503,159 +419,107 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
 
             const SizedBox(height: 12),
 
-            // MEDIA
-            !isResting
-                ? ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: mediaReady && getCurrentMediaUrl() != null
-                  ? CachedNetworkImage(
-                imageUrl: getCurrentMediaUrl()!,
-                height: 220,
-                width: double.infinity,
-                fit: BoxFit.cover,
+            if (_s.isResting)
+              const Text(
+                'REST',
+                style: TextStyle(
+                    fontSize: 48, fontWeight: FontWeight.bold),
               )
-                  : const SizedBox(
-                height: 220,
-                child: Center(child: CircularProgressIndicator()),
-              ),
-            )
-                : const Text(
-              "REST",
-              style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold),
-            ),
+            else
+              ExerciseMedia(
+                  mediaUrl: mediaUrl, mediaReady: _s.mediaReady),
 
             const SizedBox(height: 16),
 
-            // Coaching Cues
-            if (!isResting && coachingCues.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.tips_and_updates, color: Colors.blue.shade700, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        coachingCues,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.blue.shade900,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            if (!_s.isResting)
+              CoachingCueBox(cues: coachingCues),
 
             const SizedBox(height: 16),
 
-            // TIMER / REPS RING
             Expanded(
-              child: Center(
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    SizedBox(
-                      width: 220,
-                      height: 220,
-                      child: CircularProgressIndicator(
-                        value: 1,
-                        strokeWidth: 14,
-                        valueColor: AlwaysStoppedAnimation(Colors.grey.shade300),
-                      ),
-                    ),
-                    if (isTimed || isResting)
-                      SizedBox(
-                        width: 220,
-                        height: 220,
-                        child: CircularProgressIndicator(
-                          value: progress,
-                          strokeWidth: 14,
-                        ),
-                      ),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          isTimed || isResting
-                              ? "$remainingSeconds"
-                              : getQuantityDisplay(),
-                          style: const TextStyle(
-                            fontSize: 48,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          isTimed || isResting ? "seconds" : "reps",
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+              child: ProgressRing(
+                isTimed: _isTimed,
+                isResting: _s.isResting,
+                remainingSeconds: _s.remainingSeconds,
+                totalSeconds: _s.totalSeconds,
+                quantityDisplay: quantityDisplay,
               ),
             ),
 
-            if (isTimed && !isResting)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  ElevatedButton(
-                    onPressed: () => adjustTimer(-5),
-                    child: const Text("-5s"),
-                  ),
-                  ElevatedButton(
-                    onPressed: () => adjustTimer(5),
-                    child: const Text("+5s"),
-                  ),
-                ],
+            if (_isTimed && !_s.isResting)
+              TimerAdjustControls(
+                onMinus: () => _adjustTimer(-5),
+                onPlus: () => _adjustTimer(5),
               ),
 
             const SizedBox(height: 12),
 
-            if (isResting)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: skipRest,
-                    icon: const Icon(Icons.skip_next),
-                    label: const Text("Skip Rest"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ],
-              )
+            if (_s.isResting)
+              RestControls(onSkip: _skipRest)
             else
               ElevatedButton(
-                onPressed: () => completeExerciseSet(logSet: true),
-                child: const Text("Finish Set"),
+                onPressed: () => _completeSet(logSet: true),
+                child: const Text('Finish Set'),
               ),
           ],
         ),
       ),
     );
   }
+}
 
-  Color _getCategoryColor(String category) {
-    switch (category.toLowerCase()) {
-      case 'warmup':
-        return Colors.orange;
-      case 'cooldown':
-        return Colors.blue;
-      case 'main':
-      default:
-        return Colors.green;
-    }
+// ── Extracted reps picker ────────────────────────────────────────────
+
+class _RepsPicker extends StatefulWidget {
+  final int initialReps;
+  final ValueChanged<int> onConfirm;
+
+  const _RepsPicker({
+    required this.initialReps,
+    required this.onConfirm,
+  });
+
+  @override
+  State<_RepsPicker> createState() => _RepsPickerState();
+}
+
+class _RepsPickerState extends State<_RepsPicker> {
+  late int _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.initialReps;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 320,
+      child: Column(
+        children: [
+          const SizedBox(height: 12),
+          const Text('How many reps did you do?',
+              style: TextStyle(fontSize: 18)),
+          Expanded(
+            child: CupertinoPicker(
+              itemExtent: 40,
+              scrollController:
+              FixedExtentScrollController(initialItem: _selected - 1),
+              onSelectedItemChanged: (v) => _selected = v + 1,
+              children: List.generate(
+                  50, (i) => Center(child: Text('${i + 1}'))),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              widget.onConfirm(_selected);
+              Navigator.pop(context);
+            },
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
   }
 }

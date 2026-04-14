@@ -78,6 +78,23 @@ class ProgramExerciseService {
       debugPrint('Step 6 ERROR join with full hints: $e');
     }
 
+    try {
+      final fullHint = await supabase
+          .from('exercises')
+          .select('''
+            id, name,
+            exercise_category_association!exercise_category_association_exercise_id_fkey(
+              category_id,
+              exercise_categories!exercise_category_association_category_id_fkey(id, name)
+            )
+          ''')
+          .eq('id', exerciseId)
+          .maybeSingle();
+      debugPrint('Step 6 - Join with full hints: $fullHint');
+    } catch (e) {
+      debugPrint('Step 6 ERROR join with full hints: $e');
+    }
+
     debugPrint('=== END DEBUG ===');
   }
 
