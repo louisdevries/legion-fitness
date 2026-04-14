@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/program_exercise_service.dart';
+import '../services/workout_engine_service.dart';
 import 'exercise_preview_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -29,6 +30,10 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
 
   bool isActiveProgram = false;
 
+  // ENGINE DATA
+  Map<String, int> requiredSetsByDay = {};
+  Map<String, int> loggedSetsByDay = {};
+
   @override
   void initState() {
     super.initState();
@@ -50,8 +55,9 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
     setState(() => isActiveProgram = true);
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Program activated')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Program activated')),
+    );
   }
 
   Future<void> loadProgramStructure() async {
@@ -76,18 +82,64 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
 
       final userId = supabase.auth.currentUser!.id;
 
+      // -----------------------------
+      // STEP 1: REQUIRED SETS
+      // -----------------------------
+      final programExercises = await supabase
+          .from('program_exercises')
+          .select('week_number, day_number, program_exercise_details(sets)')
+          .eq('program_id', widget.programId);
+
+      requiredSetsByDay.clear();
+
+      for (final pe in programExercises) {
+        final key = '${pe['week_number']}-${pe['day_number']}';
+
+        final details = pe['program_exercise_details'] as List?;
+        final sets = (details != null && details.isNotEmpty)
+            ? (details.first['sets'] as num? ?? 1).toInt()
+            : 1;
+
+        requiredSetsByDay[key] =
+            (requiredSetsByDay[key] ?? 0) + sets;
+      }
+
+      // -----------------------------
+      // STEP 2: LOGGED SETS
+      // -----------------------------
       final progressLogs = await supabase
           .from('progress_logs')
           .select('week_number, day_number')
           .eq('program_id', widget.programId)
           .eq('user_id', userId);
 
-      completedDaysByWeek.clear();
-      for (final p in progressLogs) {
-        completedDaysByWeek
-            .putIfAbsent(p['week_number'], () => {})
-            .add(p['day_number']);
+      loggedSetsByDay.clear();
+
+      for (final log in progressLogs) {
+        final key = '${log['week_number']}-${log['day_number']}';
+
+        loggedSetsByDay[key] =
+            (loggedSetsByDay[key] ?? 0) + 1;
       }
+
+      // -----------------------------
+      // STEP 3: ENGINE EVALUATION
+      // -----------------------------
+      completedDaysByWeek.clear();
+
+      requiredSetsByDay.forEach((key, required) {
+      final logged = loggedSetsByDay[key] ?? 0;
+
+      if (logged >= required) {
+      final parts = key.split('-');
+      final week = int.parse(parts[0]);
+      final day = int.parse(parts[1]);
+
+      completedDaysByWeek
+          .putIfAbsent(week, () => {})
+          .add(day);
+      }
+      });
 
       highestUnlockedWeek = _computeHighestUnlockedWeek(totalWeeks);
       selectedWeek = 1;
@@ -107,20 +159,23 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
   }
 
   int _computeHighestUnlockedWeek(int totalWeeks) {
-    final requiredDays = rows
-        .where((r) => r['week_number'] == 1)
-        .map((r) => r['day_number'] as int)
-        .toSet();
-
     int unlocked = 1;
+
     for (int week = 1; week <= totalWeeks; week++) {
+      final weekDays = rows
+          .where((r) => r['week_number'] == week)
+          .map((r) => r['day_number'] as int)
+          .toSet();
+
       final completed = completedDaysByWeek[week] ?? {};
-      if (requiredDays.every(completed.contains)) {
+
+      if (weekDays.every(completed.contains)) {
         unlocked = week + 1;
       } else {
         break;
       }
     }
+
     return unlocked.clamp(1, totalWeeks);
   }
 
@@ -147,7 +202,6 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
     return Scaffold(
       body: CustomScrollView(
         slivers: [
-          /// HEADER
           SliverAppBar(
             expandedHeight: 260,
             pinned: true,
@@ -160,7 +214,6 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
               background: Stack(
                 fit: StackFit.expand,
                 children: [
-                  /// Background image
                   if (programInfo!['image_url'] != null)
                     Image.network(
                       programInfo!['image_url'],
@@ -169,21 +222,16 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                   else
                     Container(color: Colors.black),
 
-                  /// Gradient overlay
                   const DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black87,
-                        ],
+                        colors: [Colors.transparent, Colors.black87],
                       ),
                     ),
                   ),
 
-                  /// ✅ PROGRAM TEXT (RESTORED)
                   Positioned(
                     left: 16,
                     right: 16,
@@ -208,7 +256,6 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                             style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 14,
-                              height: 1.4,
                             ),
                           ),
                       ],
@@ -217,10 +264,8 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                 ],
               ),
             ),
-
           ),
 
-          /// BODY
           SliverPadding(
             padding: const EdgeInsets.all(16),
             sliver: SliverList(
@@ -229,16 +274,15 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                   icon: Icon(isActiveProgram
                       ? Icons.check_circle
                       : Icons.play_arrow),
-                  label:
-                  Text(isActiveProgram ? 'Program Active' : 'Start Program'),
+                  label: Text(
+                      isActiveProgram ? 'Program Active' : 'Start Program'),
                   onPressed: isActiveProgram ? null : _activateProgram,
                 ),
 
                 const SizedBox(height: 24),
 
                 Text("Select Week",
-                    style: theme.textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.bold)),
+                    style: theme.textTheme.titleLarge),
 
                 const SizedBox(height: 12),
 
@@ -258,37 +302,21 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                     final locked = week > highestUnlockedWeek;
                     final selected = week == selectedWeek;
 
-                    final bgColor = locked
-                        ? cs.surfaceVariant
-                        : selected
-                        ? cs.primaryContainer
-                        : cs.surface;
-
-                    final textColor = locked
-                        ? cs.onSurface.withValues(alpha: 0.4)
-                        : selected
-                        ? cs.onPrimaryContainer
-                        : cs.onSurface;
-
                     return GestureDetector(
                       onTap: locked
                           ? null
                           : () => setState(() => selectedWeek = week),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: bgColor,
+                          color: locked
+                              ? cs.surfaceVariant
+                              : selected
+                              ? cs.primaryContainer
+                              : cs.surface,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: cs.onSurface.withValues(alpha: 0.08),
-                          ),
                         ),
                         child: Center(
-                          child: Text(
-                            "Week $week",
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: textColor),
-                          ),
+                          child: Text("Week $week"),
                         ),
                       ),
                     );
@@ -298,8 +326,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                 const SizedBox(height: 24),
 
                 Text("Select Workout",
-                    style: theme.textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.bold)),
+                    style: theme.textTheme.titleLarge),
 
                 const SizedBox(height: 12),
 
@@ -307,37 +334,23 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                   final locked = isDayLocked(day);
                   final completed = isDayCompleted(day);
 
-                  final bgColor = locked
-                      ? cs.surfaceVariant
-                      : completed
-                      ? cs.secondaryContainer
-                      : cs.surface;
-
                   return Container(
                     margin: const EdgeInsets.only(bottom: 12),
                     decoration: BoxDecoration(
-                      color: bgColor,
+                      color: locked
+                          ? cs.surfaceVariant
+                          : completed
+                          ? cs.secondaryContainer
+                          : cs.surface,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: cs.onSurface.withValues(alpha: 0.08),
-                      ),
                     ),
                     child: ListTile(
-                      title: Text(
-                        "Workout Day $day",
-                        style: TextStyle(
-                          color: locked
-                              ? cs.onSurface.withValues(alpha: 0.4)
-                              : cs.onSurface,
-                        ),
-                      ),
+                      title: Text("Workout Day $day"),
                       trailing: completed
-                          ? Icon(Icons.check_circle, color: cs.secondary)
+                          ? const Icon(Icons.check_circle)
                           : locked
-                          ? Icon(Icons.lock,
-                          color:
-                          cs.onSurface.withValues(alpha: 0.35))
-                          : const Icon(Icons.arrow_forward_ios, size: 16),
+                          ? const Icon(Icons.lock)
+                          : const Icon(Icons.arrow_forward_ios),
                       onTap: locked
                           ? null
                           : () async {

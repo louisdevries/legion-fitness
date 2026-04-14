@@ -199,7 +199,10 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
 
+  bool _isRunMode = false; // 🔥 NEW
+
   late final List<Widget> _screens;
+
   final List<String> _titles = const [
     'Home',
     'Programs',
@@ -214,7 +217,13 @@ class _MainShellState extends State<MainShell> {
     _screens = [
       const HomeScreen(),
       const ProgramsScreen(),
-      const OutdoorRunScreen(),
+      OutdoorRunScreen(
+        onRunModeChanged: (value) {
+          setState(() {
+            _isRunMode = value;
+          });
+        },
+      ),
       widget.isGuest
           ? const Center(
         child: Padding(
@@ -231,6 +240,12 @@ class _MainShellState extends State<MainShell> {
     ];
   }
 
+  void _setRunMode(bool value) {
+    setState(() {
+      _isRunMode = value;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -238,10 +253,17 @@ class _MainShellState extends State<MainShell> {
         title: Text(_titles[_currentIndex]),
         centerTitle: true,
       ),
+
       body: _screens[_currentIndex],
+
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
+
+        // 🔒 BLOCK TAB SWITCHING WHEN RUN MODE ACTIVE
+        onTap: _isRunMode
+            ? null
+            : (index) => setState(() => _currentIndex = index),
+
         type: BottomNavigationBarType.fixed,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
