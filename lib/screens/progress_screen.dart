@@ -14,6 +14,7 @@ import '../services/progress_service.dart';
 import '../services/exercise_service.dart';
 import 'photo_compare_screen.dart';
 import 'progress_report_screen.dart';
+import 'package:table_calendar/table_calendar.dart';
 
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
@@ -34,6 +35,9 @@ class _ProgressScreenState extends State<ProgressScreen>
   List<ProgressPhoto> photos = [];
   final ImagePicker _picker = ImagePicker();
   ProgressPhoto? compareStart;
+  List<OutdoorRun> runs = [];
+  DateTime selectedDate = DateTime.now();
+  Map<String, int> stepsMap = {}; // key: "yyyy-MM-dd"
 
   // ── Removed scroll-shrink logic; replaced with swipe-to-dismiss ──
   bool _bannerVisible = true;
@@ -57,35 +61,58 @@ class _ProgressScreenState extends State<ProgressScreen>
 
   Future<void> loadData() async {
     setState(() => isLoading = true);
+
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
       setState(() => isLoading = false);
       return;
     }
+
     final programLogs = await ProgressService.getUserProgress();
     final exerciseList = await ExerciseService.getAllExercises();
+
     final programData =
     await Supabase.instance.client.from('fitness_programs').select();
     final loadedPrograms =
     programData.map<Program>((p) => Program.fromMap(p)).toList();
     programMap = {for (final p in loadedPrograms) p.id: p};
-    final data = await Supabase.instance.client
+
+    final weightData = await Supabase.instance.client
         .from('weight_logs')
         .select()
         .eq('user_id', user.id)
         .order('logged_at');
-    final weights = data
-        .map<_WeightLog>((e) => _WeightLog(
-      date: DateTime.parse(e['logged_at']),
-      weight: (e['weight_kg'] as num).toDouble(),
-    ))
-        .toList();
+    final weights = weightData.map<_WeightLog>((e) {
+      return _WeightLog(
+        date: DateTime.parse(e['logged_at']),
+        weight: (e['weight_kg'] as num).toDouble(),
+      );
+    }).toList();
+
+    final runData = await Supabase.instance.client
+        .from('outdoor_runs')
+        .select()
+        .eq('user_id', user.id);
+    final loadedRuns = runData.map<OutdoorRun>((e) => OutdoorRun.fromMap(e)).toList();
+
+    // ✅ Fetch steps
+    final stepsData = await Supabase.instance.client
+        .from('daily_steps')
+        .select()
+        .eq('user_id', user.id);
+    final loadedSteps = <String, int>{};
+    for (final row in stepsData) {
+      loadedSteps[row['date'] as String] = (row['steps'] as num).toInt();
+    }
+
     if (mounted) {
       setState(() {
         logs = programLogs;
         exercises = exerciseList;
         programs = loadedPrograms;
         weightLogs = weights;
+        runs = loadedRuns;
+        stepsMap = loadedSteps;
         isLoading = false;
       });
     }
@@ -273,7 +300,7 @@ class _ProgressScreenState extends State<ProgressScreen>
           controller: _tabController,
           tabs: const [
             Tab(text: 'Overview'),
-            Tab(text: 'Exercises'),
+            Tab(text: 'Weight'),
             Tab(text: 'Photos'),
           ],
         ),
@@ -288,7 +315,7 @@ class _ProgressScreenState extends State<ProgressScreen>
         controller: _tabController,
         children: [
           _overviewTab(),
-          const Center(child: Text('Exercise view')),
+          _weightTab(),
           _photosTab(),
         ],
       ),
@@ -296,22 +323,180 @@ class _ProgressScreenState extends State<ProgressScreen>
   }
 
   Widget _overviewTab() {
+    if (weightLogs.isEmpty && runs.isEmpty) {
+      return const Center(child: Text('No data yet'));
+    }
+
+    final sortedWeights = [...weightLogs]
+      ..sort((a, b) => a.date.compareTo(b.date));
+
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+
+          // 📅 Calendar
+          TableCalendar(
+            focusedDay: selectedDate,
+            firstDay: DateTime(2020),
+            lastDay: DateTime.now(),
+            selectedDayPredicate: (day) =>
+                isSameDay(day, selectedDate),
+            onDaySelected: (selected, focused) {
+              setState(() {
+                selectedDate = selected;
+              });
+            },
+          ),
+
+          const SizedBox(height: 12),
+
+          // 📊 Selected Day Data
+          _buildDayDetails(),
+        ],
+      ),
+    );
+  }
+
+  Widget _weightTab() {
     if (weightLogs.isEmpty) {
       return const Center(child: Text('No weight data yet'));
     }
-    final sorted = [...weightLogs]..sort((a, b) => a.date.compareTo(b.date));
+
+    final sorted = [...weightLogs]
+      ..sort((a, b) => a.date.compareTo(b.date));
+
+    List<FlSpot> spots = sorted.map((w) {
+      return FlSpot(
+        w.date.millisecondsSinceEpoch.toDouble(),
+        w.weight,
+      );
+    }).toList();
+
+    // Handle single point
+    if (spots.length == 1) {
+      final single = spots.first;
+      spots.add(FlSpot(single.x + 1000, single.y));
+    }
+
+    final minX = spots.first.x;
+    final maxX = spots.last.x;
+
+    final double range = maxX - minX;
+    final double interval = range == 0 ? 1.0 : range / 4.0;
+
+    final latestSpot = spots.last;
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: LineChart(
         LineChartData(
+          minX: minX,
+          maxX: maxX,
+
+          // ✅ Clean grid
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+          ),
+
+          borderData: FlBorderData(show: false),
+
+          // ✅ Axis styling
+          titlesData: FlTitlesData(
+            topTitles: AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            rightTitles: AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: interval,
+                reservedSize: 30,
+                getTitlesWidget: (value, meta) {
+                  final date =
+                  DateTime.fromMillisecondsSinceEpoch(value.toInt());
+                  return Text(
+                    "${date.day}/${date.month}",
+                    style: const TextStyle(fontSize: 10),
+                  );
+                },
+              ),
+            ),
+
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 40,
+              ),
+            ),
+          ),
+
+          // ✅ Touch tooltip
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (touchedSpots) {
+                return touchedSpots.map((spot) {
+                  final date = DateTime.fromMillisecondsSinceEpoch(
+                      spot.x.toInt());
+                  return LineTooltipItem(
+                    "${spot.y.toStringAsFixed(1)} kg\n${date.day}/${date.month}/${date.year}",
+                    const TextStyle(color: Colors.white),
+                  );
+                }).toList();
+              },
+            ),
+          ),
+
+          // ✅ THE GOOD STUFF (visual upgrade)
           lineBarsData: [
             LineChartBarData(
-              spots: sorted
-                  .asMap()
-                  .entries
-                  .map((e) => FlSpot(e.key.toDouble(), e.value.weight))
-                  .toList(),
+              spots: spots,
               isCurved: true,
+              barWidth: 3,
+
+              // 🔥 Gradient line
+              gradient: const LinearGradient(
+                colors: [
+                  Color(0xFF6C63FF),
+                  Color(0xFF00C9A7),
+                ],
+              ),
+
+              // 🔥 Area fill
+              belowBarData: BarAreaData(
+                show: true,
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFF6C63FF).withOpacity(0.3),
+                    const Color(0xFF00C9A7).withOpacity(0.05),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+
+              // 🔥 Highlight latest point
+              dotData: FlDotData(
+                show: true,
+                getDotPainter: (spot, percent, bar, index) {
+                  if (spot.x == latestSpot.x &&
+                      spot.y == latestSpot.y) {
+                    return FlDotCirclePainter(
+                      radius: 5,
+                      color: Colors.orange,
+                      strokeWidth: 2,
+                      strokeColor: Colors.white,
+                    );
+                  }
+                  return FlDotCirclePainter(
+                    radius: 2,
+                    color: Colors.white,
+                  );
+                },
+              ),
             ),
           ],
         ),
@@ -646,6 +831,236 @@ class _ProgressScreenState extends State<ProgressScreen>
     );
   }
 
+  String _formatDuration(int seconds) {
+    final mins = seconds ~/ 60;
+    final secs = seconds % 60;
+    return "$mins:${secs.toString().padLeft(2, '0')}";
+  }
+
+  Widget _buildDayDetails() {
+    final dateKey =
+        "${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}";
+
+    // Steps for this day
+    final steps = stepsMap[dateKey];
+
+    // Runs for this day
+    final dayRuns = runs.where((r) =>
+    r.startedAt.year == selectedDate.year &&
+        r.startedAt.month == selectedDate.month &&
+        r.startedAt.day == selectedDate.day);
+
+    // Weight for this day
+    final dayWeight = weightLogs.firstWhere(
+          (w) =>
+      w.date.year == selectedDate.year &&
+          w.date.month == selectedDate.month &&
+          w.date.day == selectedDate.day,
+      orElse: () => _WeightLog(date: selectedDate, weight: -1),
+    );
+
+    // Program logs for this day — group by program+week+day
+    final dayLogs = logs.where((l) =>
+    l.date.year == selectedDate.year &&
+        l.date.month == selectedDate.month &&
+        l.date.day == selectedDate.day);
+
+    // Deduplicate to unique program sessions (same programId+week+day = one session)
+    final Map<String, ProgressLog> sessionMap = {};
+    for (final l in dayLogs) {
+      final key = "${l.programId}_${l.weekNumber}_${l.dayNumber}";
+      sessionMap.putIfAbsent(key, () => l);
+    }
+    final sessions = sessionMap.values.toList();
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Date heading
+          Text(
+            "${selectedDate.day}/${selectedDate.month}/${selectedDate.year}",
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+
+          const SizedBox(height: 12),
+
+          // ✅ Steps card
+          if (steps != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF6C63FF), Color(0xFF00C9A7)],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.directions_walk, color: Colors.white, size: 28),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Steps",
+                        style: TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
+                      Text(
+                        steps.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+          // ✅ Program session cards
+          if (sessions.isNotEmpty) ...[
+            const Text(
+              "Workout",
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            ...sessions.map((session) {
+              final program = programMap[session.programId];
+              return _buildProgramSessionCard(session, program);
+            }),
+            const SizedBox(height: 12),
+          ],
+
+          // Weight
+          if (dayWeight.weight != -1)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                "⚖️  Weight: ${dayWeight.weight.toStringAsFixed(1)} kg",
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+
+          // Runs
+          if (dayRuns.isEmpty && sessions.isEmpty && steps == null && dayWeight.weight == -1)
+            const Text("No data for this day")
+          else if (dayRuns.isNotEmpty)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Runs",
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                ...dayRuns.map((run) => Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.directions_run),
+                    title: Text(
+                        "${(run.distance / 1000).toStringAsFixed(2)} km"),
+                    subtitle: Text(
+                        "Time: ${_formatDuration(run.duration)}\n"
+                            "Pace: ${run.pace?.toStringAsFixed(2) ?? '--'} min/km"),
+                  ),
+                )),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+// ✅ New helper — program session card with image background
+  Widget _buildProgramSessionCard(ProgressLog session, Program? program) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      height: 110,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        color: Colors.grey[850],
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Background image
+          if (program != null && program.imageUrl.isNotEmpty)
+            Image.network(
+              program.imageUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(color: Colors.grey[800]),
+            ),
+
+          // Dark overlay so text is readable
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.black.withOpacity(0.65),
+                  Colors.black.withOpacity(0.35),
+                ],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+            ),
+          ),
+
+          // Content
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  program?.name ?? "Program #${session.programId}",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    shadows: [Shadow(blurRadius: 4, color: Colors.black)],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    _sessionBadge("Week ${session.weekNumber}"),
+                    const SizedBox(width: 8),
+                    _sessionBadge("Day ${session.dayNumber}"),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sessionBadge(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white30),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
   List<ProgressPhoto>? _getBestTransformation() {
     if (photos.length < 2) return null;
     double bestScore = 0;
@@ -677,4 +1092,30 @@ class _WeightLog {
   final DateTime date;
   final double weight;
   _WeightLog({required this.date, required this.weight});
+}
+
+class OutdoorRun {
+  final DateTime startedAt;
+  final DateTime endedAt;
+  final int duration;
+  final double distance;
+  final double? pace;
+
+  OutdoorRun({
+    required this.startedAt,
+    required this.endedAt,
+    required this.duration,
+    required this.distance,
+    this.pace,
+  });
+
+  factory OutdoorRun.fromMap(Map<String, dynamic> e) {
+    return OutdoorRun(
+      startedAt: DateTime.parse(e['started_at']),
+      endedAt: DateTime.parse(e['ended_at']),
+      duration: e['duration_seconds'],
+      distance: (e['distance_meters'] as num).toDouble(),
+      pace: (e['avg_pace_min_per_km'] as num?)?.toDouble(),
+    );
+  }
 }

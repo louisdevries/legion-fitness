@@ -15,6 +15,7 @@ import '../utils/route_utils.dart';
 import '../utils/map_gesture_handler.dart';
 import '../models/run_state.dart';
 import '../main.dart';
+import '../services/run_service.dart';
 
 const String mapboxToken = "pk.eyJ1IjoibG91aXNkZXZyaWVzIiwiYSI6ImNtbnlsZ3d1dDAzMXgycXNlcXlyaHJrdmwifQ.bDTfupr74bI5qnK7VCgBHg";
 
@@ -34,6 +35,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
   StreamSubscription<LatLng>? _positionStream;
   Timer? _timer;
   MapGestureHandler? _gestureHandler;
+  DateTime? _startTime;
 
   late RunState _state;
 
@@ -87,6 +89,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
 
   Future<void> _startRun() async {
     await LocationService.startBackgroundMode();
+    _startTime = DateTime.now();
 
     widget.onRunModeChanged?.call(true); // 🔥 ENTER RUN MODE
 
@@ -151,12 +154,45 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
     setState(() => _state = _state.copyWith(isPaused: !_state.isPaused));
   }
 
-  void _stopRun() {
+  void _stopRun() async {
     _timer?.cancel();
     _positionStream?.cancel();
     LocationService.stopBackgroundMode();
 
-    widget.onRunModeChanged?.call(false); // 🔥 EXIT RUN MODE
+    widget.onRunModeChanged?.call(false);
+
+    final user = Supabase.instance.client.auth.currentUser;
+
+    if (user != null && _startTime != null) {
+      try {
+        final endTime = DateTime.now();
+
+        // ✅ ADD CHECK HERE
+        if (_state.totalDistanceMeters < 50) {
+          _showSnackBar("Run too short to save");
+        } else {
+          final avgPace = _state.totalDistanceMeters > 0
+              ? (_state.elapsedSeconds / 60) /
+              (_state.totalDistanceMeters / 1000)
+              : null;
+
+          await RunService.saveRun(
+            userId: user.id,
+            startedAt: _startTime!,
+            endedAt: endTime,
+            durationSeconds: _state.elapsedSeconds,
+            distanceMeters: _state.totalDistanceMeters,
+            avgPace: avgPace,
+            route: _state.actualRunPath,
+          );
+
+          _showSnackBar("Run saved successfully ✅");
+        }
+      } catch (e) {
+        _showSnackBar("Failed to save run ❌");
+        developer.log("Save run error: $e");
+      }
+    }
 
     setState(() {
       _state = _state.copyWith(

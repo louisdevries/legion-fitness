@@ -9,6 +9,7 @@ import '../services/exercise_generator.dart';
 import 'custom_exercise_screen.dart';
 import 'premium_program_screen.dart';
 import '../main.dart'; // AppSettings
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -103,11 +104,20 @@ class _HomeScreenState extends State<HomeScreen>
     try {
       final steps = await _health.getTotalStepsInInterval(midnight, now) ?? 0;
       if (mounted) setState(() => _steps = steps);
+
+      // ✅ Save to Supabase
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null) {
+        await Supabase.instance.client.from('daily_steps').upsert({
+          'user_id': user.id,
+          'date': DateTime(now.year, now.month, now.day).toIso8601String().substring(0, 10),
+          'steps': steps,
+        }, onConflict: 'user_id,date');
+      }
     } catch (e) {
       debugPrint('Failed to fetch steps: $e');
     }
 
-    // Refresh every 30s only if still mounted
     if (mounted) {
       Future.delayed(const Duration(seconds: 30), _fetchSteps);
     }
