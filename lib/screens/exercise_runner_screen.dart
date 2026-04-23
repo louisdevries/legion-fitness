@@ -13,6 +13,7 @@ import 'widgets/exercise_runner/progress_ring.dart';
 import 'widgets/exercise_runner/rest_controls.dart';
 import 'widgets/exercise_runner/timer_adjust_controls.dart';
 import 'widgets/exercise_runner/workout_progress_bar.dart';
+import '../services/sync_service.dart';
 
 class ExerciseRunnerScreen extends StatefulWidget {
   final List<Map<String, dynamic>> exercises;
@@ -34,6 +35,90 @@ class ExerciseRunnerScreen extends StatefulWidget {
   State<ExerciseRunnerScreen> createState() => _ExerciseRunnerScreenState();
 }
 
+class NextExercisePreview extends StatelessWidget {
+  final Map<String, dynamic> exercise;
+
+  const NextExercisePreview({super.key, required this.exercise});
+
+  @override
+  Widget build(BuildContext context) {
+    final name = exercise['name'] ?? 'Exercise';
+    final mediaUrl = exercise['media_url'] ?? '';
+
+    final sets = exercise['sets'] ?? 1;
+    final minQ = exercise['min_quantity'] ?? 0;
+    final maxQ = exercise['max_quantity'] ?? minQ;
+    final durationType =
+    (exercise['duration_type'] ?? 'reps').toString().toLowerCase();
+
+    final unit = durationType.contains('second') ? 'sec' : 'reps';
+
+    final quantity = minQ == maxQ
+        ? '$sets × $minQ $unit'
+        : '$sets × $minQ–$maxQ $unit';
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          // Image
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: mediaUrl.isNotEmpty
+                ? Image.network(
+              mediaUrl,
+              width: 70,
+              height: 70,
+              fit: BoxFit.cover,
+            )
+                : const SizedBox(
+              width: 70,
+              height: 70,
+              child: Icon(Icons.fitness_center),
+            ),
+          ),
+
+          const SizedBox(width: 12),
+
+          // Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Up Next",
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  quantity,
+                  style: const TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
   late ExerciseRunnerState _s;
   late List<Map<String, dynamic>> exercises;
@@ -51,6 +136,23 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
       _s.usingAlternative && _currentAlternative != null
           ? _currentAlternative!
           : _currentExercise;
+
+  Map<String, dynamic>? get _nextExercise {
+    if (!_isLastSet) {
+      return _currentExercise; // same exercise, next set
+    } else if (!_isLastExercise) {
+      return exercises[_s.currentIndex + 1];
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? get _nextActiveExercise {
+    final next = _nextExercise;
+    if (next == null) return null;
+
+    final alt = next['alternative'] as Map<String, dynamic>?;
+    return (_s.usingAlternative && alt != null) ? alt : next;
+  }
 
   int get _totalSets => _currentExercise['sets'] as int? ?? 1;
   bool get _isLastSet => _s.currentSet >= _totalSets;
@@ -209,7 +311,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
         _s = _s.copyWith(lastSelectedSeconds: _s.totalSeconds);
       }
 
-      await _svc.logSet(
+      _svc.logSet(
         exercise: _currentExercise,
         isTimed: _isTimed,
         lastSelectedSeconds: _s.lastSelectedSeconds,
@@ -305,6 +407,9 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
   // ── Workout complete ─────────────────────────────────────────────
 
   Future<void> _showWorkoutComplete() async {
+    // 🔥 trigger final sync
+    SyncService.trySync();
+
     await showDialog(
       context: context,
       barrierDismissible: false,
@@ -419,15 +524,20 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen> {
 
             const SizedBox(height: 12),
 
-            if (_s.isResting)
+            if (_s.isResting) ...[
               const Text(
                 'REST',
-                style: TextStyle(
-                    fontSize: 48, fontWeight: FontWeight.bold),
-              )
+                style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold),
+              ),
+
+              if (_nextActiveExercise != null)
+                NextExercisePreview(exercise: _nextActiveExercise!),
+            ]
             else
               ExerciseMedia(
-                  mediaUrl: mediaUrl, mediaReady: _s.mediaReady),
+                mediaUrl: mediaUrl,
+                mediaReady: _s.mediaReady,
+              ),
 
             const SizedBox(height: 16),
 
