@@ -10,6 +10,9 @@ import 'custom_exercise_screen.dart';
 import 'premium_program_screen.dart';
 import '../main.dart'; // AppSettings
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'exercise_runner_screen.dart';
+import 'dart:convert';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -125,9 +128,69 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ================= NAVIGATION =================
 
+  Future<bool?> _showResumeDialog() {
+    return showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Resume workout?"),
+        content: const Text(
+          "You have an unfinished workout. Do you want to continue where you left off?",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Restart"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Resume"),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _navigateToWorkout() async {
     if (_state.nextWeek == null || _state.nextDay == null) return;
 
+    final prefs = await SharedPreferences.getInstance();
+    final savedJson = prefs.getString('active_session');
+
+    if (savedJson != null) {
+      final savedData = jsonDecode(savedJson) as Map<String, dynamic>;
+      final savedProgram = savedData['programId'] as int?;
+      final savedWeek    = savedData['weekNumber'] as int?;
+      final savedDay     = savedData['dayNumber'] as int?;
+      final timestamp    = savedData['timestamp'] as int? ?? 0;
+      final expired      = DateTime.now().millisecondsSinceEpoch - timestamp > 3 * 60 * 60 * 1000;
+
+      // Only offer resume if it's for THIS workout and not expired.
+      if (!expired &&
+          savedProgram == _state.programId &&
+          savedWeek == _state.nextWeek &&
+          savedDay == _state.nextDay) {
+        final shouldResume = await _showResumeDialog();
+        if (shouldResume == null) return;
+        if (shouldResume) {
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => ExerciseRunnerScreen(
+              exercises: const [],
+              programId: _state.programId!,
+              weekNumber: _state.nextWeek!,
+              dayNumber: _state.nextDay!,
+              resumeMode: true,
+            ),
+          ));
+          return;
+        }
+        await prefs.remove('active_session');
+      } else if (expired) {
+        // Clean up stale session silently.
+        await prefs.remove('active_session');
+      }
+    }
+
+    // 🔁 Normal flow (preview + countdown)
     AppSettings.showLoading();
 
     try {

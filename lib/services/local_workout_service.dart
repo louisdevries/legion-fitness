@@ -17,25 +17,27 @@ class LocalWorkoutService {
     required bool isTimed,
     required int reps,
     required int seconds,
+    required int setIndex,
+    required int repsCompleted,
     double? weightUsedKg,
   }) async {
+    // Remove after confirming fix
+    print('💾 logSet: exerciseId=${exercise['exercise_id']} setIndex=$setIndex reps=$repsCompleted');
+
     final now = DateTime.now();
-
     await _db.into(_db.exerciseLogs).insert(
-      ExerciseLogsCompanion.insert(
-        id: _uuid.v4(),
-
-        programId: exercise['program_id'] as int,
-        exerciseId: exercise['exercise_id'] as int,
-        weekNumber: exercise['week_number'] as int,
-        dayNumber: exercise['day_number'] as int,
-
-        // ✅ FIX: wrap nullable values
+      ExerciseLogsCompanion(
+        id: Value(_uuid.v4()),
+        programId: Value(exercise['program_id'] as int),
+        exerciseId: Value(exercise['exercise_id'] as int),
+        weekNumber: Value(exercise['week_number'] as int),
+        dayNumber: Value(exercise['day_number'] as int),
+        setIndex: Value(setIndex),
+        repsCompleted: Value(repsCompleted),
         reps: Value(isTimed ? null : reps),
         seconds: Value(isTimed ? seconds : null),
         weight: Value(weightUsedKg),
-
-        createdAt: now,
+        createdAt: Value(now),
       ),
     );
   }

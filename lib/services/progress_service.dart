@@ -5,7 +5,6 @@ import 'dart:developer' as developer;
 final supabase = Supabase.instance.client;
 
 class ProgressService {
-  // ✅ FIXED: no programId filter
   static Future<List<ProgressLog>> getUserProgress() async {
     final user = supabase.auth.currentUser;
     if (user == null) return [];
@@ -14,7 +13,7 @@ class ProgressService {
         .from('progress_logs')
         .select()
         .eq('user_id', user.id)
-        .order('date'); // optional but useful
+        .order('date');
 
     return (response as List)
         .map((e) => ProgressLog.fromMap(e as Map<String, dynamic>))
@@ -47,7 +46,6 @@ class ProgressService {
         .eq('day_number', dayNumber);
 
     final completedCount = (logs as List).length;
-
     return completedCount >= totalExercises;
   }
 
@@ -60,10 +58,7 @@ class ProgressService {
     double? weightUsedKg,
   }) async {
     final user = supabase.auth.currentUser;
-    if (user == null) {
-      developer.log('No user logged in, cannot log exercise.');
-      return;
-    }
+    if (user == null) return;
 
     try {
       await supabase.from('progress_logs').insert({
@@ -78,6 +73,37 @@ class ProgressService {
       });
     } catch (e, stack) {
       developer.log('Error inserting progress log', error: e, stackTrace: stack);
+    }
+  }
+
+  // per-set logging with setIndex and actual reps
+  static Future<void> logExerciseCompletion({
+    required int programId,
+    required int exerciseId,
+    required int weekNumber,
+    required int dayNumber,
+    required int setIndex,
+    required int repsCompleted,
+  }) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      developer.log('No user logged in, cannot log completion.');
+      return;
+    }
+
+    try {
+      await supabase.from('exercise_completions').insert({
+  'user_id': user.id,
+  'program_id': programId,
+  'exercise_id': exerciseId,
+  'week_number': weekNumber,
+  'day_number': dayNumber,
+  'set_index': setIndex,
+  'reps_completed': repsCompleted,
+  'completed_at': DateTime.now().toIso8601String(),
+});
+    } catch (e, stack) {
+      developer.log('Error inserting completion log', error: e, stackTrace: stack);
     }
   }
 }

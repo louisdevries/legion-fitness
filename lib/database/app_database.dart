@@ -20,7 +20,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase._internal() : super(_openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   late final ExerciseLogsDao exerciseLogsDao =
   ExerciseLogsDao(this);
@@ -28,6 +28,16 @@ class AppDatabase extends _$AppDatabase {
 // ─────────────────────────────────────────────
 // optional: migrations later
 // ─────────────────────────────────────────────
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.addColumn(exerciseLogs, exerciseLogs.setIndex);
+        await m.addColumn(exerciseLogs, exerciseLogs.repsCompleted);
+      }
+    },
+  );
 }
 
 LazyDatabase _openConnection() {
@@ -38,3 +48,4 @@ LazyDatabase _openConnection() {
     return NativeDatabase(file);
   });
 }
+

@@ -69,10 +69,10 @@ class HomeService {
 
       final allExercises = (allExercisesData)
           .map((e) => {
-        'id': e['id'],
-        'week': (e['week_number'] as num).toInt(),
-        'day': (e['day_number'] as num).toInt(),
-      })
+                'id': e['id'],
+                'week': (e['week_number'] as num).toInt(),
+                'day': (e['day_number'] as num).toInt(),
+              })
           .toList();
 
       developer.log("Total exercises in program: ${allExercises.length}");
@@ -83,9 +83,10 @@ class HomeService {
       final exercisesByDay = _groupExercisesByDay(allExercises);
       developer.log("Exercise groups: ${exercisesByDay.keys.toList()}");
 
+      // FIX: fetch exercise_id so we can deduplicate by exercise, not by row
       final completedLogsData = await supabase
-          .from('progress_logs')
-          .select('week_number, day_number, exercise_id, date')
+          .from('exercise_completions')
+          .select('week_number, day_number, exercise_id, completed_at')
           .eq('user_id', user.id)
           .eq('program_id', programId);
 
@@ -97,8 +98,6 @@ class HomeService {
       developer.log("=== RAW DATA DEBUG ===");
       developer.log("Total logs fetched: ${completedLogsData.length}");
       developer.log("Completed count by day: ${completionData.countByDay}");
-      developer.log(
-          "First completions: ${completionData.firstCompletionByDay}");
       developer.log("Unique workout dates: ${completionData.workoutDates}");
 
       final nextWorkout = await _findNextWorkout(
@@ -119,8 +118,7 @@ class HomeService {
       developer.log("=== PROGRESS DEBUG ===");
       developer.log(
           "Next workout -> Week: ${nextWorkout.week}, Day: ${nextWorkout.day}");
-      developer.log(
-          "Current week (program): ${progressMetrics.currentWeek}");
+      developer.log("Current week (program): ${progressMetrics.currentWeek}");
       developer.log(
           "This calendar week completed days: ${progressMetrics.completedDays}");
       developer.log(
@@ -164,44 +162,49 @@ class HomeService {
   }
 
   _CompletionData _analyzeCompletionData(
-      List logs,
-      Map<String, List<Map<String, dynamic>>> exercisesByDay,
-      ) {
-    final Map<String, int> countByDay = {};
-    final Map<String, DateTime> firstCompletionByDay = {};
+    List logs,
+    Map<String, List<Map<String, dynamic>>> exercisesByDay,
+  ) {
+    // FIX: use Set<int> per day to count UNIQUE exercises completed,
+    // not raw rows — because each exercise now has multiple set rows.
+    // A day is complete when every exercise_id has at least one logged set.
+    final Map<String, Set<int>> completedExercisesByDay = {};
     final Set<String> workoutDates = {};
 
     for (final log in logs) {
-      final weekNum = (log['week_number'] as num?)?.toInt();
-      final dayNum = (log['day_number'] as num?)?.toInt();
+      final week = (log['week_number'] as num?)?.toInt();
+      final day = (log['day_number'] as num?)?.toInt();
+      final exerciseId = (log['exercise_id'] as num?)?.toInt();
 
-      if (weekNum == null || dayNum == null) {
-        developer.log("Warning: Log missing week or day number: $log");
-        continue;
-      }
+      if (week == null || day == null || exerciseId == null) continue;
 
-      final key = "$weekNum-$dayNum";
-      countByDay[key] = (countByDay[key] ?? 0) + 1;
+      final key = "$week-$day";
 
-      try {
-        if (log['date'] != null) {
-          final date = DateTime.parse(log['date']);
-          if (!firstCompletionByDay.containsKey(key)) {
-            firstCompletionByDay[key] = date;
-          }
-          final dateStr = date.toIso8601String().substring(0, 10);
-          workoutDates.add(dateStr);
-        }
-      } catch (e) {
-        developer.log("Error parsing date for log: $e");
+      // Add exercise_id to the set — duplicates (multiple sets) are ignored
+      // because Set only keeps unique values. This is correct: we want to
+      // know "did the user do this exercise at all", not "how many sets".
+      completedExercisesByDay.putIfAbsent(key, () => <int>{});
+      completedExercisesByDay[key]!.add(exerciseId);
+
+      if (log['completed_at'] != null) {
+        final date = DateTime.parse(log['completed_at']);
+        workoutDates.add(date.toIso8601String().substring(0, 10));
       }
     }
 
+    // countByDay = number of UNIQUE exercises completed per day
+    final Map<String, int> countByDay = {
+      for (final e in completedExercisesByDay.entries) e.key: e.value.length
+    };
+
     final Map<int, Set<int>> completedByWeek = {};
-    countByDay.forEach((key, count) {
+
+    countByDay.forEach((key, completedCount) {
       final exercises = exercisesByDay[key];
-      final exerciseCount = exercises?.length ?? 0;
-      if (exerciseCount > 0 && count >= exerciseCount) {
+      final total = exercises?.length ?? 0;
+
+      // Day is complete when all exercises have been touched
+      if (total > 0 && completedCount >= total) {
         final parts = key.split('-');
         final week = int.parse(parts[0]);
         final day = int.parse(parts[1]);
@@ -209,11 +212,9 @@ class HomeService {
       }
     });
 
-    developer.log("Completed workouts by week: $completedByWeek");
-
     return _CompletionData(
       countByDay: countByDay,
-      firstCompletionByDay: firstCompletionByDay,
+      firstCompletionByDay: {},
       workoutDates: workoutDates,
       completedByWeek: completedByWeek,
     );
@@ -250,7 +251,7 @@ class HomeService {
         nextWeek = int.parse(parts[0]);
         nextDay = int.parse(parts[1]);
         developer.log(
-            "  -> Found incomplete Week 1 workout: Week $nextWeek, Day $nextDay");
+            "  -> Found incomplete workout: Week $nextWeek, Day $nextDay");
         break;
       }
     }
@@ -279,8 +280,7 @@ class HomeService {
         }
       }
 
-      developer
-          .log("Highest week with any completion: $highestCompletedWeek");
+      developer.log("Highest week with any completion: $highestCompletedWeek");
 
       final daysPerWeek =
           exercisesByDay.keys.where((k) => k.startsWith('1-')).length;
@@ -345,10 +345,16 @@ class HomeService {
         exercisesByDay.keys.where((k) => k.startsWith('1-')).length;
     final totalExpectedWorkoutSessions = totalWeeks * daysPerWeek;
 
-    int completedWorkoutSessions = 0;
-    for (final weekData in completedWorkoutsByWeek.entries) {
-      completedWorkoutSessions += weekData.value.length;
+    final Set<String> completedSessions = {};
+
+    for (final weekEntry in completedWorkoutsByWeek.entries) {
+      final week = weekEntry.key;
+      for (final day in weekEntry.value) {
+        completedSessions.add("$week-$day");
+      }
     }
+
+    int completedWorkoutSessions = completedSessions.length;
 
     for (int week = 2; week <= totalWeeks; week++) {
       for (int day = 1; day <= daysPerWeek; day++) {
@@ -358,8 +364,7 @@ class HomeService {
             completedWorkoutsByWeek[week]?.contains(day) ?? false;
         if (completed > 0 && !isAlreadyCounted) {
           final week1DayKey = '1-$day';
-          final week1DayExercises =
-              exercisesByDay[week1DayKey]?.length ?? 10;
+          final week1DayExercises = exercisesByDay[week1DayKey]?.length ?? 10;
           if (completed >= week1DayExercises) {
             completedWorkoutSessions++;
           }
@@ -398,7 +403,6 @@ class HomeService {
     );
   }
 
-  /// Fetches exercises for a given day with correct table name and category join
   Future<List<Map<String, dynamic>>> fetchWeek1Exercises({
     required int programId,
     required int weekNumber,
@@ -434,22 +438,19 @@ class HomeService {
 
       developer.log("Processing exercise ID: $exerciseId");
 
-      // Fetch exercise details (sets, reps, duration)
       final detailsData = await supabase
           .from('program_exercise_details')
           .select()
           .eq('program_exercise_id', programEx['id'])
           .maybeSingle();
 
-      // Extract category from joined data
       final categoryAssociations =
-      exerciseData['exercise_category_association'] as List?;
+          exerciseData['exercise_category_association'] as List?;
       int? categoryId;
       String? categoryName;
 
       if (categoryAssociations != null && categoryAssociations.isNotEmpty) {
-        final catData =
-        categoryAssociations.first['exercise_categories'];
+        final catData = categoryAssociations.first['exercise_categories'];
         categoryId = catData?['id'] as int?;
         categoryName = (catData?['name'] as String?)?.toLowerCase();
         developer.log(
@@ -458,15 +459,24 @@ class HomeService {
         developer.log("  Exercise $exerciseId has NO category association!");
       }
 
+      final sets = detailsData?['sets'] as int? ?? 1;
+      final minQuantity = detailsData?['min_quantity'] as int? ?? 0;
+
+      // FIX: week 1 exercises also need set_quantities so the runner
+      // can show the correct prescribed reps per set from day one.
+      // For week 1 all sets are the same value (min_quantity).
+      final setQuantities = List.filled(sets, minQuantity);
+
       exercises.add({
         'id': exerciseId,
         'program_exercise_id': programEx['id'],
         'name': exerciseData['name'],
         'media_url': exerciseData['media_url'],
         'coaching_cues': exerciseData['coaching_cues'],
-        'sets': detailsData?['sets'],
-        'min_quantity': detailsData?['min_quantity'],
-        'max_quantity': detailsData?['max_quantity'],
+        'sets': sets,
+        'set_quantities': setQuantities, // FIX: add per-set quantities
+        'min_quantity': minQuantity,
+        'max_quantity': detailsData?['max_quantity'] ?? minQuantity,
         'duration_type': detailsData?['duration_type'] ?? 'reps',
         'is_superset': detailsData?['is_superset'] ?? false,
         'has_alternative': detailsData?['has_alternative'] ?? false,
@@ -480,8 +490,7 @@ class HomeService {
       });
     }
 
-    int warmups =
-        exercises.where((e) => e['category_name'] == 'warm-up').length;
+    int warmups = exercises.where((e) => e['category_name'] == 'warm-up').length;
     int mains = exercises.where((e) => e['category_name'] == 'main').length;
     int cooldowns =
         exercises.where((e) => e['category_name'] == 'cool-down').length;
