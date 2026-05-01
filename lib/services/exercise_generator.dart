@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:developer' as developer;
 
 class ExerciseGenerator {
   final supabase = Supabase.instance.client;
@@ -11,17 +12,19 @@ class ExerciseGenerator {
     final user = supabase.auth.currentUser;
     if (user == null) throw Exception('No user logged in');
 
-    print("Generating Week $targetWeek Day $targetDay from Week 1 Day $targetDay");
+    developer.log("Generating Week $targetWeek Day $targetDay");
 
+    // Fetch week 1 template
     final week1Data = await supabase
         .from('program_exercises')
         .select('''
           *,
           exercises (
-            id,
-            name,
-            media_url,
-            coaching_cues
+            id, name, media_url, coaching_cues,
+            exercise_category_association!exercise_category_association_exercise_id_fkey(
+              category_id,
+              exercise_categories!exercise_category_association_category_id_fkey(id, name)
+            )
           )
         ''')
         .eq('program_id', programId)
@@ -33,8 +36,9 @@ class ExerciseGenerator {
       throw Exception('No template exercises found for day $targetDay');
     }
 
+    // Fetch previous week completions for main exercises
     final previousWeek = targetWeek - 1;
-    final previousWeekLogs = await supabase
+    final previousLogs = await supabase
         .from('exercise_completions')
         .select('exercise_id, reps_completed, set_index')
         .eq('user_id', user.id)
@@ -42,131 +46,269 @@ class ExerciseGenerator {
         .eq('week_number', previousWeek)
         .eq('day_number', targetDay)
         .order('exercise_id')
-        .order('set_index'); // ensures sets come back in order
+        .order('set_index');
 
-    // FIX: keeps all sets in order, not just the max
+    // Map: exerciseId -> { setIndex -> repsCompleted }
     final previousPerformance =
-    _analyzePreviousPerformance(previousWeekLogs as List);
+    _analyzePerformanceBySet(previousLogs as List);
 
-    print("Previous week performance: ${previousPerformance.keys.length} exercises tracked");
+    developer.log(
+        "Previous week performance: ${previousPerformance.keys.length} exercises");
 
     final generatedExercises = <Map<String, dynamic>>[];
 
     for (final programEx in week1Data) {
-      final exerciseId = programEx['exercise_id'] as int;
-      final exerciseData = programEx['exercises'];
+      final exerciseData = programEx['exercises'] as Map<String, dynamic>?;
+      if (exerciseData == null) continue;
 
+      final exerciseId = programEx['exercise_id'] as int;
+
+      // Fetch details
       final detailsData = await supabase
           .from('program_exercise_details')
           .select()
           .eq('program_exercise_id', programEx['id'])
           .maybeSingle();
 
-      final baseRepsMin = detailsData?['min_quantity'] as int? ?? 10;
-      final sets = detailsData?['sets'] as int? ?? 1;
+      if (detailsData == null) continue;
 
-      final categoryResult = await supabase
-          .from('exercise_category_association')
-          .select('category_id')
-          .eq('exercise_id', exerciseId)
-          .maybeSingle();
+      final detail = _DetailInline.fromMap(detailsData);
 
-      String category = 'main';
-      if (categoryResult != null) {
-        final categoryId = categoryResult['category_id'] as int?;
-        if (categoryId == 1) {
-          category = 'warmup';
-        } else if (categoryId == 3) {
-          category = 'cooldown';
-        } else {
-          category = 'main';
-        }
+      // Category
+      final categoryAssociations =
+      exerciseData['exercise_category_association'] as List?;
+      int? categoryId;
+      String? categoryName;
+      if (categoryAssociations != null && categoryAssociations.isNotEmpty) {
+        final catData = categoryAssociations.first['exercise_categories'];
+        categoryId = catData?['id'] as int?;
+        categoryName = (catData?['name'] as String?)?.toLowerCase();
       }
 
-      final alternativeData = await supabase
-          .from('exercise_alternatives')
-          .select('''
-            alternative_id,
-            exercises!exercise_alternatives_alternative_id_fkey(
-              id,
-              name,
-              media_url,
-              coaching_cues
-            )
-          ''')
-          .eq('exercise_id', exerciseId)
-          .maybeSingle();
+      final sets = detail.sets;
+      final minQ = detail.minQuantity;
+      final maxQ = detail.maxQuantity;
+      final durationType = detail.durationType;
 
-      Map<String, dynamic>? alternative;
-      if (alternativeData != null && alternativeData['exercises'] != null) {
-        final altEx = alternativeData['exercises'];
-        alternative = {
-          'id': altEx['id'],
-          'name': altEx['name'],
-          'media_url': altEx['media_url'],
-          'coaching_cues': altEx['coaching_cues'] ?? '',
-          'sets': sets,
-          'min_quantity': baseRepsMin,
-          'max_quantity': baseRepsMin,
-          'duration_type': detailsData?['duration_type'] ?? 'reps',
-        };
+      // ── Progressive overload for main exercise ───────────────────
+      final baseSetQty = detail.resolvedSetQuantities();
+      final prevSets = previousPerformance[exerciseId] ?? {};
+      final progressedSetQty = _progressSets(
+        sets: sets,
+        baseQuantities: baseSetQty,
+        previousBySetIndex: prevSets,
+      );
+      developer.log(
+          "  Exercise $exerciseId: base=$baseSetQty -> progressed=$progressedSetQty");
+
+      // ── Alternative ──────────────────────────────────────────────
+      Map<String, dynamic>? alternativeExercise;
+      if (detail.alternativeExerciseId != null) {
+        alternativeExercise = await _fetchExercise(
+          exerciseId: detail.alternativeExerciseId!,
+          sets: detail.alternativeSet ?? sets,
+          setQuantities: List.filled(
+              detail.alternativeSet ?? sets,
+              detail.minAlternative ?? minQ),
+          minQ: detail.minAlternative ?? minQ,
+          maxQ: detail.maxAlternative ?? maxQ,
+          durationType: detail.alternativeDurationType ?? durationType,
+        );
       }
 
-      // FIX: per-set quantities, each incremented by 1 from previous week
-      final List<int> previousSets = previousPerformance[exerciseId] ?? [];
+      // ── Superset partner ─────────────────────────────────────────
+      Map<String, dynamic>? supersetPartner;
+      if (detail.supersetExerciseId != null) {
+        final baseSupersetQty = detail.resolvedSupersetSetQuantities();
+        final prevSupersetSets =
+            previousPerformance[detail.supersetExerciseId!] ?? {};
+        final progressedSupersetQty = _progressSets(
+          sets: sets,
+          baseQuantities: baseSupersetQty,
+          previousBySetIndex: prevSupersetSets,
+        );
+        developer.log(
+            "  Superset partner ${detail.supersetExerciseId}: base=$baseSupersetQty -> progressed=$progressedSupersetQty");
 
-      final List<int> setQuantities;
-      if (previousSets.isNotEmpty) {
-        // Increment each set's actual logged reps by 1 independently
-        setQuantities = previousSets.map((r) => r + 1).toList();
-        print("  Exercise $exerciseId: previous sets $previousSets -> $setQuantities");
-      } else {
-        // No history — use week 1 base value repeated for each set
-        setQuantities = List.filled(sets, baseRepsMin);
-        print("  Exercise $exerciseId: no history, using base $baseRepsMin x$sets sets");
+        supersetPartner = await _fetchExercise(
+          exerciseId: detail.supersetExerciseId!,
+          sets: sets,
+          setQuantities: progressedSupersetQty,
+          minQ: minQ,
+          maxQ: maxQ,
+          durationType: durationType,
+        );
       }
+      // ────────────────────────────────────────────────────────────
 
       generatedExercises.add({
         'id': programEx['id'],
-        'program_id': programId,
         'exercise_id': exerciseId,
+        'program_id': programId,
         'week_number': targetWeek,
         'day_number': targetDay,
-        'sets': setQuantities.length,
-        'set_quantities': setQuantities,       // per-set rep targets
-        'min_quantity': setQuantities.first,   // for display fallback
-        'max_quantity': setQuantities.first,
-        'name': exerciseData?['name'] ?? 'Exercise',
-        'media_url': exerciseData?['media_url'],
-        'coaching_cues': exerciseData?['coaching_cues'] ?? '',
-        'duration_type': detailsData?['duration_type'] ?? 'reps',
-        'category': category,
-        'alternative': alternative,
+        'name': exerciseData['name'] ?? 'Exercise',
+        'media_url': exerciseData['media_url'],
+        'coaching_cues': exerciseData['coaching_cues'] ?? '',
+        'sets': sets,
+        'set_quantities': progressedSetQty,
+        'min_quantity': progressedSetQty.first,
+        'max_quantity': progressedSetQty.reduce((a, b) => a > b ? a : b),
+        'duration_type': durationType,
+        'is_superset': detail.isSuperset,
+        'has_alternative': detail.alternativeExerciseId != null,
+        'alternative_exercise_id': detail.alternativeExerciseId,
+        'alternative_exercise': alternativeExercise,
+        'superset_exercise_id': detail.supersetExerciseId,
+        'superset_partner': supersetPartner,
+        'category_id': categoryId,
+        'category_name': categoryName,
       });
     }
 
+    // Sort by category
     generatedExercises.sort((a, b) {
-      final order = {'warmup': 0, 'main': 1, 'cooldown': 2};
-      final aOrder = order[a['category']] ?? 1;
-      final bOrder = order[b['category']] ?? 1;
-      return aOrder.compareTo(bOrder);
+      const order = {'warm-up': 0, 'main': 1, 'cool-down': 2};
+      return (order[a['category_name']] ?? 1)
+          .compareTo(order[b['category_name']] ?? 1);
     });
 
-    print("Generated ${generatedExercises.length} exercises for Week $targetWeek Day $targetDay");
+    developer.log(
+        "Generated ${generatedExercises.length} exercises for Week $targetWeek Day $targetDay");
     return generatedExercises;
   }
 
-  // FIX: returns ordered list of reps per set, not just the max
-  Map<int, List<int>> _analyzePreviousPerformance(List logs) {
-    final Map<int, List<int>> performance = {};
+  // ── Per-set progressive overload ─────────────────────────────────
+  // For each set index, if there's a previous completion use that + 1.
+  // If no previous completion for that set, fall back to base quantity.
+  List<int> _progressSets({
+    required int sets,
+    required List<int> baseQuantities,
+    required Map<int, int> previousBySetIndex,
+  }) {
+    final result = <int>[];
+    for (int i = 1; i <= sets; i++) {
+      final base = i <= baseQuantities.length ? baseQuantities[i - 1] : baseQuantities.last;
+      final prev = previousBySetIndex[i];
+      result.add(prev != null ? prev + 1 : base);
+    }
+    return result;
+  }
 
+  // ── Analyze previous completions into { exerciseId -> { setIndex -> reps } }
+  Map<int, Map<int, int>> _analyzePerformanceBySet(List logs) {
+    final Map<int, Map<int, int>> performance = {};
     for (final log in logs) {
       final exerciseId = log['exercise_id'] as int?;
-      final reps = log['reps_completed'] as int? ?? 0;
-      if (exerciseId == null) continue;
-      performance.putIfAbsent(exerciseId, () => []).add(reps);
+      final setIndex = log['set_index'] as int?;
+      final reps = log['reps_completed'] as int?;
+      if (exerciseId == null || setIndex == null || reps == null) continue;
+      performance.putIfAbsent(exerciseId, () => {})[setIndex] = reps;
     }
-
     return performance;
+  }
+
+  // ── Fetch exercise name/media from exercises table ───────────────
+  Future<Map<String, dynamic>?> _fetchExercise({
+    required int exerciseId,
+    required int sets,
+    required List<int> setQuantities,
+    required int minQ,
+    required int maxQ,
+    required String durationType,
+  }) async {
+    final ex = await supabase
+        .from('exercises')
+        .select('id, name, media_url, coaching_cues')
+        .eq('id', exerciseId)
+        .maybeSingle();
+
+    if (ex == null) return null;
+
+    return {
+      'id': ex['id'],
+      'exercise_id': exerciseId,
+      'name': ex['name']?.toString().isNotEmpty == true
+          ? ex['name']
+          : 'Exercise',
+      'media_url': ex['media_url']?.toString() ?? '',
+      'coaching_cues': ex['coaching_cues'] ?? '',
+      'sets': sets,
+      'set_quantities': setQuantities,
+      'min_quantity': minQ,
+      'max_quantity': maxQ,
+      'duration_type': durationType,
+    };
+  }
+}
+
+// ── Inline detail parser ─────────────────────────────────────────
+class _DetailInline {
+  final int sets;
+  final int minQuantity;
+  final int maxQuantity;
+  final String durationType;
+  final bool isSuperset;
+  final int? alternativeExerciseId;
+  final int? alternativeSet;
+  final int? minAlternative;
+  final int? maxAlternative;
+  final String? alternativeDurationType;
+  final List<int>? setQuantities;
+  final int? supersetExerciseId;
+  final List<int>? supersetSetQuantities;
+
+  _DetailInline({
+    required this.sets,
+    required this.minQuantity,
+    required this.maxQuantity,
+    required this.durationType,
+    required this.isSuperset,
+    this.alternativeExerciseId,
+    this.alternativeSet,
+    this.minAlternative,
+    this.maxAlternative,
+    this.alternativeDurationType,
+    this.setQuantities,
+    this.supersetExerciseId,
+    this.supersetSetQuantities,
+  });
+
+  List<int> resolvedSetQuantities() {
+    if (setQuantities != null && setQuantities!.isNotEmpty) {
+      return setQuantities!;
+    }
+    return List.filled(sets, minQuantity);
+  }
+
+  List<int> resolvedSupersetSetQuantities() {
+    if (supersetSetQuantities != null && supersetSetQuantities!.isNotEmpty) {
+      return supersetSetQuantities!;
+    }
+    return List.filled(sets, minQuantity);
+  }
+
+  factory _DetailInline.fromMap(Map<String, dynamic> map) {
+    return _DetailInline(
+      sets: map['sets'] ?? 1,
+      minQuantity: map['min_quantity'] ?? 0,
+      maxQuantity: map['max_quantity'] ?? map['min_quantity'] ?? 0,
+      durationType: map['duration_type'] ?? 'reps',
+      isSuperset: map['is_superset'] ?? false,
+      alternativeExerciseId: map['alternative_exercise_id'],
+      alternativeSet: map['alternative_sets'],
+      minAlternative: map['min_alternative'],
+      maxAlternative: map['max_alternative'],
+      alternativeDurationType: map['alternative_duration_type'],
+      setQuantities: _parseIntArray(map['set_quantities']),
+      supersetExerciseId: map['superset_exercise_id'],
+      supersetSetQuantities: _parseIntArray(map['superset_set_quantities']),
+    );
+  }
+
+  static List<int>? _parseIntArray(dynamic value) {
+    if (value == null) return null;
+    if (value is List) return value.map((e) => (e as num).toInt()).toList();
+    return null;
   }
 }

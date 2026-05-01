@@ -1,4 +1,3 @@
-
 import 'exercise_set_result.dart';
 
 class ExerciseRunnerState {
@@ -7,6 +6,7 @@ class ExerciseRunnerState {
   final bool isResting;
   final bool isPaused;
   final bool usingAlternative;
+  final bool onSupersetPartner; // ← new
 
   final int remainingSeconds;
   final int totalSeconds;
@@ -27,6 +27,7 @@ class ExerciseRunnerState {
     this.isResting = false,
     this.isPaused = false,
     this.usingAlternative = false,
+    this.onSupersetPartner = false, // ← new
     this.remainingSeconds = 0,
     this.totalSeconds = 0,
     this.lastSelectedReps = 0,
@@ -44,6 +45,7 @@ class ExerciseRunnerState {
       'isResting': isResting,
       'isPaused': isPaused,
       'usingAlternative': usingAlternative,
+      'onSupersetPartner': onSupersetPartner, // ← new
       'remainingSeconds': remainingSeconds,
       'totalSeconds': totalSeconds,
       'lastSelectedReps': lastSelectedReps,
@@ -61,6 +63,7 @@ class ExerciseRunnerState {
       isResting: json['isResting'] ?? false,
       isPaused: json['isPaused'] ?? false,
       usingAlternative: json['usingAlternative'] ?? false,
+      onSupersetPartner: json['onSupersetPartner'] ?? false, // ← new
       remainingSeconds: json['remainingSeconds'] ?? 0,
       totalSeconds: json['totalSeconds'] ?? 0,
       lastSelectedReps: json['lastSelectedReps'] ?? 0,
@@ -78,6 +81,7 @@ class ExerciseRunnerState {
     bool? isResting,
     bool? isPaused,
     bool? usingAlternative,
+    bool? onSupersetPartner, // ← new
     int? remainingSeconds,
     int? totalSeconds,
     int? lastSelectedReps,
@@ -93,6 +97,7 @@ class ExerciseRunnerState {
       isResting: isResting ?? this.isResting,
       isPaused: isPaused ?? this.isPaused,
       usingAlternative: usingAlternative ?? this.usingAlternative,
+      onSupersetPartner: onSupersetPartner ?? this.onSupersetPartner, // ← new
       remainingSeconds: remainingSeconds ?? this.remainingSeconds,
       totalSeconds: totalSeconds ?? this.totalSeconds,
       lastSelectedReps: lastSelectedReps ?? this.lastSelectedReps,

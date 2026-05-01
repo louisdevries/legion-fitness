@@ -49,13 +49,18 @@ class NextExercisePreview extends StatelessWidget {
     final name = exercise['name'] ?? 'Exercise';
     final mediaUrl = exercise['media_url'] ?? '';
     final sets = exercise['sets'] ?? 1;
+    final setQuantities = exercise['set_quantities'];
     final minQ = exercise['min_quantity'] ?? 0;
-    final maxQ = exercise['max_quantity'] ?? minQ;
     final durationType =
     (exercise['duration_type'] ?? 'reps').toString().toLowerCase();
     final unit = durationType.contains('second') ? 'sec' : 'reps';
-    final quantity =
-    minQ == maxQ ? '$sets × $minQ $unit' : '$sets × $minQ–$maxQ $unit';
+
+    String quantity;
+    if (setQuantities is List && setQuantities.isNotEmpty) {
+      quantity = '$sets × ${setQuantities.map((e) => e.toString()).join('/')} $unit';
+    } else {
+      quantity = '$sets × $minQ $unit';
+    }
 
     return Container(
       margin: const EdgeInsets.only(top: 12),
@@ -72,7 +77,9 @@ class NextExercisePreview extends StatelessWidget {
                 ? Image.network(mediaUrl,
                 width: 70, height: 70, fit: BoxFit.cover)
                 : const SizedBox(
-                width: 70, height: 70, child: Icon(Icons.fitness_center)),
+                width: 70,
+                height: 70,
+                child: Icon(Icons.fitness_center)),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -105,12 +112,33 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
 
   // ── Convenience getters ──────────────────────────────────────────
   Map<String, dynamic> get _currentExercise => exercises[_s.currentIndex];
-  Map<String, dynamic>? get _currentAlternative =>
-      _currentExercise['alternative'] as Map<String, dynamic>?;
-  Map<String, dynamic> get _activeExercise =>
-      _s.usingAlternative && _currentAlternative != null
-          ? _currentAlternative!
-          : _currentExercise;
+
+  Map<String, dynamic>? get _supersetPartner {
+    final partner = _currentExercise['superset_partner'];
+    if (partner is Map<String, dynamic>) return partner;
+    return null;
+  }
+
+  bool get _isSuperset => _supersetPartner != null && !_s.usingAlternative;
+
+  // Which exercise is currently active within the superset
+  // (false = primary, true = superset partner)
+  bool get _onSupersetPartner => _s.onSupersetPartner;
+
+  Map<String, dynamic> get _activeExercise {
+    if (_s.usingAlternative) {
+      final alt = _currentExercise['alternative'];
+      if (alt is Map<String, dynamic>) return alt;
+    }
+    if (_isSuperset && _onSupersetPartner) return _supersetPartner!;
+    return _currentExercise;
+  }
+
+  Map<String, dynamic>? get _currentAlternative {
+    final alt = _currentExercise['alternative'];
+    if (alt is Map<String, dynamic>) return alt;
+    return null;
+  }
 
   Map<String, dynamic>? get _nextExercise {
     if (!_isLastSet) return _currentExercise;
@@ -128,18 +156,35 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
   int get _totalSets => _currentExercise['sets'] as int? ?? 1;
   bool get _isLastSet => _s.currentSet >= _totalSets;
   bool get _isLastExercise => _s.currentIndex >= exercises.length - 1;
-  bool get _isTimed => ExerciseRunnerUtils.isTimedExercise(_activeExercise);
+
+  // Supersets are always rep-based
+  bool get _isTimed =>
+      !_isSuperset &&
+          ExerciseRunnerUtils.isTimedExercise(_activeExercise);
+
   String get _category =>
       ExerciseCategoryUtils.resolveCategory(_currentExercise);
   String get _resumeKey => 'active_session';
 
-  // FIX: get the prescribed reps for the current set specifically
   int get _prescribedRepsForCurrentSet {
-    final setQuantities = _currentExercise['set_quantities'];
+    final exercise = _onSupersetPartner && _isSuperset
+        ? _supersetPartner!
+        : _currentExercise;
+    final setQuantities = exercise['set_quantities'];
     if (setQuantities is List && setQuantities.length >= _s.currentSet) {
-      return setQuantities[_s.currentSet - 1] as int;
+      return (setQuantities[_s.currentSet - 1] as num).toInt();
     }
-    return _currentExercise['min_quantity'] as int? ?? 10;
+    return exercise['min_quantity'] as int? ?? 10;
+  }
+
+  String get _appBarTitle {
+    if (_s.isResting) return 'Rest';
+    if (_isSuperset) {
+      final primaryName = ExerciseRunnerUtils.getName(_currentExercise);
+      final partnerName = ExerciseRunnerUtils.getName(_supersetPartner!);
+      return '$primaryName + $partnerName';
+    }
+    return ExerciseRunnerUtils.getName(_activeExercise);
   }
 
   bool _isNewCategory() {
@@ -180,12 +225,51 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
 
     WidgetsBinding.instance.addObserver(this);
 
-    exercises = widget.exercises.map((e) => {
-      ...e,
-      'exercise_id': e['exercise_id'] ?? e['id'],
-      'program_id': widget.programId,
-      'week_number': widget.weekNumber,
-      'day_number': widget.dayNumber,
+    exercises = widget.exercises.map((e) {
+      final altSource = e['alternative_exercise'];
+      Map<String, dynamic>? alternative;
+
+      if (altSource != null && altSource is Map) {
+        alternative = {
+          'exercise_id': altSource['id'],
+          'name': altSource['name']?.toString().isNotEmpty == true
+              ? altSource['name']
+              : 'Alternative Exercise',
+          'media_url': altSource['media_url']?.toString() ?? '',
+          'coaching_cues': altSource['coaching_cues'] ?? '',
+          'sets': e['alternative_sets'] ?? e['sets'],
+          'min_quantity': altSource['min_quantity'],
+          'max_quantity': altSource['max_quantity'],
+          'duration_type': altSource['duration_type'],
+          'set_quantities': altSource['set_quantities'],
+        };
+      } else if (e['alternative_exercise_id'] != null) {
+        alternative = {
+          'exercise_id': e['alternative_exercise_id'],
+          'name': e['alternative_exercise_name']?.toString().isNotEmpty == true
+              ? e['alternative_exercise_name']
+              : 'Alternative Exercise',
+          'media_url': e['alternative_media_url']?.toString() ?? '',
+          'sets': e['alternative_sets'] ?? e['sets'],
+          'min_quantity': e['alternative_min_quantity'] ?? e['min_quantity'],
+          'max_quantity': e['alternative_max_quantity'] ?? e['max_quantity'],
+          'duration_type': e['alternative_duration_type'] ?? e['duration_type'],
+          'set_quantities': e['alternative_set_quantities'],
+        };
+      }
+
+      // Superset partner — already a populated map from the service
+      final supersetPartner = e['superset_partner'] as Map<String, dynamic>?;
+
+      return {
+        ...e,
+        'exercise_id': e['exercise_id'] ?? e['id'],
+        'program_id': widget.programId,
+        'week_number': widget.weekNumber,
+        'day_number': widget.dayNumber,
+        'alternative': alternative,
+        'superset_partner': supersetPartner,
+      };
     }).toList();
 
     exercises.sort((a, b) {
@@ -237,6 +321,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
         'currentSet': _s.currentSet,
         'completedSets': _s.completedSets,
         'usingAlternative': _s.usingAlternative,
+        'onSupersetPartner': _s.onSupersetPartner,
         'isResting': _s.isResting,
         'remainingSeconds': _s.remainingSeconds,
         'totalSeconds': _s.totalSeconds,
@@ -256,7 +341,6 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     }
 
     final data = jsonDecode(json) as Map<String, dynamic>;
-
     final timestamp = data['timestamp'] as int? ?? 0;
     final age = DateTime.now().millisecondsSinceEpoch - timestamp;
     if (age > 3 * 60 * 60 * 1000) {
@@ -265,16 +349,14 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
       return;
     }
 
-    exercises = List<Map<String, dynamic>>.from(data['exercises'] as List? ?? []);
-
+    exercises =
+    List<Map<String, dynamic>>.from(data['exercises'] as List? ?? []);
     if (exercises.isEmpty) {
       _startCurrentExercise();
       return;
     }
 
     final wasResting = data['isResting'] as bool? ?? false;
-    final remaining = data['remainingSeconds'] as int? ?? 0;
-    final total = data['totalSeconds'] as int? ?? 0;
 
     setState(() {
       _s = ExerciseRunnerState(
@@ -282,9 +364,10 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
         currentSet: data['currentSet'] as int? ?? 1,
         completedSets: data['completedSets'] as int? ?? 0,
         usingAlternative: data['usingAlternative'] as bool? ?? false,
+        onSupersetPartner: data['onSupersetPartner'] as bool? ?? false,
         isResting: wasResting,
-        remainingSeconds: remaining,
-        totalSeconds: total,
+        remainingSeconds: data['remainingSeconds'] as int? ?? 0,
+        totalSeconds: data['totalSeconds'] as int? ?? 0,
         mediaReady: true,
       );
     });
@@ -329,7 +412,6 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     }
 
     if (mounted) setState(() {});
-
     if (_isTimed) _startExerciseTimer();
   }
 
@@ -357,6 +439,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     _timer?.cancel();
     _s = _s.copyWith(
       isResting: true,
+      onSupersetPartner: false,
       remainingSeconds: widget.restSeconds,
       totalSeconds: widget.restSeconds,
     );
@@ -400,6 +483,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     _s = _s.copyWith(
       currentIndex: nextIndex,
       currentSet: nextSet,
+      onSupersetPartner: false,
       usingAlternative: nextSet == 1 ? false : _s.usingAlternative,
     );
     _startCurrentExercise();
@@ -411,28 +495,29 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     _timer?.cancel();
 
     if (logSet) {
-      // Capture BEFORE any state mutation
       final setIndexToLog = _s.currentSet;
       int reps = 0;
 
-      if (!_isTimed) {
-        final prescribed = _prescribedRepsForCurrentSet;
-        await showModalBottomSheet(
-          context: context,
-          isDismissible: false,
-          builder: (_) => _RepsPicker(
-            initialReps: prescribed,
-            onConfirm: (v) => reps = v,
-          ),
-        );
-      } else {
-        reps = _s.totalSeconds;
-      }
+      final prescribed = _prescribedRepsForCurrentSet;
+      await showModalBottomSheet(
+        context: context,
+        isDismissible: false,
+        builder: (_) => _RepsPicker(
+          initialReps: prescribed,
+          onConfirm: (v) => reps = v,
+        ),
+      );
+
+      // Log the active exercise (primary or superset partner)
+      final exerciseToLog =
+      _onSupersetPartner && _isSuperset ? _supersetPartner! : _currentExercise;
+      final exerciseIdToLog =
+          exerciseToLog['exercise_id'] as int? ?? exerciseToLog['id'] as int;
 
       final newSet = ExerciseSetResult(
         setIndex: setIndexToLog,
         reps: reps,
-        durationSeconds: _isTimed ? _s.totalSeconds : null,
+        durationSeconds: null,
       );
 
       _s = _s.copyWith(
@@ -442,31 +527,41 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
 
       await _saveState();
 
-      // Write to Drift — this is what SyncService actually reads
       await _svc.logSet(
-        exercise: _currentExercise,
-        isTimed: _isTimed,
-        lastSelectedSeconds: _s.totalSeconds,
+        exercise: {
+          ..._currentExercise,
+          'exercise_id': exerciseIdToLog,
+        },
+        isTimed: false,
+        lastSelectedSeconds: 0,
         lastSelectedReps: reps,
-        setIndex: setIndexToLog,   // ← unambiguous, captured before any mutation
+        setIndex: setIndexToLog,
         repsCompleted: reps,
       );
 
-      // Queue for immediate online sync attempt
       await _svc.queueCompletion(
         programId: widget.programId,
         weekNumber: widget.weekNumber,
         dayNumber: widget.dayNumber,
-        exerciseId: _currentExercise['exercise_id'] as int,
-        setIndex: setIndexToLog,   // ← same value
+        exerciseId: exerciseIdToLog,
+        setIndex: setIndexToLog,
         repsCompleted: reps,
       );
     }
 
-    // Use a completely different variable name for flow logic
-    // to avoid any shadowing confusion
+    // ── Superset flow ────────────────────────────────────────────
+    // If we just finished the primary and there's a partner → go to partner
+    // If we just finished the partner → rest/next as normal
+    if (_isSuperset && !_onSupersetPartner) {
+      // Move to superset partner — no rest
+      setState(() => _s = _s.copyWith(onSupersetPartner: true));
+      await _startCurrentExercise();
+      return;
+    }
+
+    // ── Normal set completion flow ───────────────────────────────
     final totalSetsForExercise = _currentExercise['sets'] as int? ?? 1;
-    final justCompletedSet = _s.currentSet; // read AFTER copyWith above
+    final justCompletedSet = _s.currentSet;
 
     if (justCompletedSet < totalSetsForExercise) {
       _startRest(
@@ -489,8 +584,14 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     }
   }
 
-  int get _totalRequiredSets =>
-      exercises.fold(0, (sum, ex) => sum + ((ex['sets'] as int?) ?? 1));
+  int get _totalRequiredSets {
+    return exercises.fold(0, (sum, ex) {
+      final sets = (ex['sets'] as int?) ?? 1;
+      // Count double if superset (primary + partner each need logging)
+      final hasSuperset = ex['superset_partner'] != null;
+      return sum + (hasSuperset ? sets * 2 : sets);
+    });
+  }
 
   // ── Alternative ──────────────────────────────────────────────────
   void _switchAlternative() {
@@ -560,7 +661,6 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
   // ── Build ────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final exerciseName = ExerciseRunnerUtils.getName(_activeExercise);
     final coachingCues = ExerciseRunnerUtils.getCoachingCues(_activeExercise);
     final mediaUrl = ExerciseRunnerUtils.getMediaUrl(_activeExercise);
     final quantityDisplay =
@@ -570,8 +670,12 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
       onWillPop: _confirmExit,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(_s.isResting ? 'Rest' : exerciseName),
-          backgroundColor: _s.isResting ? Colors.green : null,
+          title: Text(_appBarTitle),
+          backgroundColor: _s.isResting
+              ? Colors.green
+              : _isSuperset
+              ? Colors.purple.shade700
+              : null,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () async {
@@ -581,7 +685,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
             },
           ),
           actions: [
-            if (!_s.isResting && _currentAlternative != null)
+            if (!_s.isResting && _currentAlternative != null && !_isSuperset)
               IconButton(
                 icon: Icon(_s.usingAlternative
                     ? Icons.swap_horiz
@@ -628,12 +732,33 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
                   ),
                 ),
               const SizedBox(height: 8),
+
+              // ── Set counter + superset indicator ─────────────────
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Set ${_s.currentSet} / $_totalSets',
                       style: const TextStyle(fontWeight: FontWeight.bold)),
-                  if (_s.usingAlternative)
+                  if (_isSuperset)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        _onSupersetPartner
+                            ? '2nd exercise'
+                            : '1st exercise',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.purple.shade700,
+                        ),
+                      ),
+                    )
+                  else if (_s.usingAlternative)
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
@@ -649,7 +774,22 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
                     ),
                 ],
               ),
+
+              // ── Superset exercise name label ──────────────────────
+              if (_isSuperset && !_s.isResting) ...[
+                const SizedBox(height: 8),
+                Text(
+                  ExerciseRunnerUtils.getName(_activeExercise),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.purple.shade700,
+                  ),
+                ),
+              ],
+
               const SizedBox(height: 12),
+
               if (_s.isResting) ...[
                 const Text('REST',
                     style: TextStyle(
@@ -658,9 +798,11 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
                   NextExercisePreview(exercise: _nextActiveExercise!),
               ] else
                 ExerciseMedia(mediaUrl: mediaUrl, mediaReady: _s.mediaReady),
+
               const SizedBox(height: 16),
               if (!_s.isResting) CoachingCueBox(cues: coachingCues),
               const SizedBox(height: 16),
+
               Expanded(
                 child: ProgressRing(
                   isTimed: _isTimed,
@@ -670,18 +812,29 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
                   quantityDisplay: quantityDisplay,
                 ),
               ),
+
               if (_isTimed && !_s.isResting)
                 TimerAdjustControls(
                   onMinus: () => _adjustTimer(-5),
                   onPlus: () => _adjustTimer(5),
                 ),
+
               const SizedBox(height: 12),
+
               if (_s.isResting)
                 RestControls(onSkip: _skipRest)
               else
                 ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor:
+                    _isSuperset ? Colors.purple.shade700 : null,
+                    foregroundColor: _isSuperset ? Colors.white : null,
+                  ),
                   onPressed: () => _completeSet(logSet: true),
-                  child: const Text('Finish Set'),
+                  // Button label changes depending on superset state
+                  child: Text(_isSuperset && !_onSupersetPartner
+                      ? 'Next Exercise →'
+                      : 'Finish Set'),
                 ),
             ],
           ),

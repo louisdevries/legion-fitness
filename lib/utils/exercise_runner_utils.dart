@@ -37,11 +37,18 @@ class ExerciseRunnerUtils {
     return t.contains('sec');
   }
 
-  static String getName(Map<String, dynamic> exercise) =>
-      exercise['name'] as String? ?? 'Exercise';
+  static String getName(Map<String, dynamic> exercise) {
+    final name = exercise['name'];
+    if (name is String && name.trim().isNotEmpty) return name.trim();
+    return 'Exercise';
+  }
 
-  static String? getMediaUrl(Map<String, dynamic> exercise) =>
-      exercise['media_url'] as String?;
+  /// Returns empty string (never null) so callers can safely do mediaUrl.isEmpty
+  static String getMediaUrl(Map<String, dynamic> exercise) {
+    final url = exercise['media_url'];
+    if (url is String && url.trim().isNotEmpty) return url.trim();
+    return '';
+  }
 
   static String getCoachingCues(Map<String, dynamic> exercise) =>
       exercise['coaching_cues'] as String? ?? '';

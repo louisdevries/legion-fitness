@@ -78,23 +78,6 @@ class ProgramExerciseService {
       debugPrint('Step 6 ERROR join with full hints: $e');
     }
 
-    try {
-      final fullHint = await supabase
-          .from('exercises')
-          .select('''
-            id, name,
-            exercise_category_association!exercise_category_association_exercise_id_fkey(
-              category_id,
-              exercise_categories!exercise_category_association_category_id_fkey(id, name)
-            )
-          ''')
-          .eq('id', exerciseId)
-          .maybeSingle();
-      debugPrint('Step 6 - Join with full hints: $fullHint');
-    } catch (e) {
-      debugPrint('Step 6 ERROR join with full hints: $e');
-    }
-
     debugPrint('=== END DEBUG ===');
   }
 
@@ -103,6 +86,8 @@ class ProgramExerciseService {
     required int weekNumber,
     required int dayNumber,
   }) async {
+
+    debugPrint("🔍 fetchExercisesForDay called: program=$programId week=$weekNumber day=$dayNumber");
     final userId = supabase.auth.currentUser!.id;
 
     final data = await supabase
@@ -115,7 +100,6 @@ class ProgramExerciseService {
     final programExercises = List<Map<String, dynamic>>.from(data);
     final List<Map<String, dynamic>> exercisesWithDetails = [];
 
-    // Debug the first exercise to check join
     if (programExercises.isNotEmpty) {
       await debugCategoryJoin(programExercises.first['exercise_id'] as int);
     }
@@ -177,6 +161,36 @@ class ProgramExerciseService {
         }
       }
 
+      // ── Fetch alternative exercise data ───────────────────────────
+      Map<String, dynamic>? alternativeExercise;
+      final altExerciseId = detail?.alternativeExerciseId;
+
+      if (altExerciseId != null) {
+        debugPrint('Fetching alternative exercise for id=$altExerciseId');
+
+        final altData = await supabase
+            .from('exercises')
+            .select('id, name, media_url, coaching_cues, duration_type, min_quantity, max_quantity')
+            .eq('id', altExerciseId)
+            .maybeSingle();
+
+        debugPrint('Alternative exercise data: $altData');
+
+        if (altData != null) {
+          alternativeExercise = {
+            'id': altData['id'],
+            'name': altData['name'] ?? 'Alternative Exercise',
+            'media_url': altData['media_url'] ?? '',
+            'coaching_cues': altData['coaching_cues'] ?? '',
+            'sets': detail?.alternativeSet ?? detail?.sets ?? 1,
+            'min_quantity': detail?.minAlternative ?? altData['min_quantity'] ?? minQ,
+            'max_quantity': detail?.maxAlternative ?? altData['max_quantity'] ?? maxQ,
+            'duration_type': detail?.alternativeDurationType ?? altData['duration_type'] ?? 'reps',
+          };
+        }
+      }
+      // ─────────────────────────────────────────────────────────────
+
       final merged = {
         ...exerciseInfo,
         'program_exercise_id': pe['id'],
@@ -186,7 +200,8 @@ class ProgramExerciseService {
         'duration_type': detail?.durationType ?? 'reps',
         'is_superset': detail?.isSuperset ?? false,
         'has_alternative': detail?.hasAlternative ?? false,
-        'alternative_exercise_id': detail?.alternativeExerciseId,
+        'alternative_exercise_id': altExerciseId,
+        'alternative_exercise': alternativeExercise, // ← now populated
         'alternative_set': detail?.alternativeSet,
         'min_alternative': detail?.minAlternative,
         'max_alternative': detail?.maxAlternative,

@@ -83,61 +83,53 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
       final userId = supabase.auth.currentUser!.id;
 
       // -----------------------------
-      // STEP 1: REQUIRED SETS
+      // STEP 1: REQUIRED EXERCISES PER DAY
+      // Each exercise counts as 1 unit — a day is done when all
+      // exercises have at least one completion logged.
       // -----------------------------
       final programExercises = await supabase
           .from('program_exercises')
-          .select('week_number, day_number, program_exercise_details(sets)')
+          .select('week_number, day_number, exercise_id')
           .eq('program_id', widget.programId);
 
-      requiredSetsByDay.clear();
-
+      // Count how many distinct exercises exist per day
+      final Map<String, Set<int>> requiredExercisesByDay = {};
       for (final pe in programExercises) {
         final key = '${pe['week_number']}-${pe['day_number']}';
-
-        final details = pe['program_exercise_details'] as List?;
-        final sets = (details != null && details.isNotEmpty)
-            ? (details.first['sets'] as num? ?? 1).toInt()
-            : 1;
-
-        requiredSetsByDay[key] =
-            (requiredSetsByDay[key] ?? 0) + sets;
+        requiredExercisesByDay.putIfAbsent(key, () => <int>{});
+        requiredExercisesByDay[key]!.add(pe['exercise_id'] as int);
       }
 
       // -----------------------------
-      // STEP 2: LOGGED SETS
+      // STEP 2: COMPLETED EXERCISES PER DAY
+      // From exercise_completions — deduplicate by exercise_id
+      // so multiple sets don't inflate the count.
       // -----------------------------
-      final progressLogs = await supabase
-          .from('progress_logs')
-          .select('week_number, day_number')
+      final completionLogs = await supabase
+          .from('exercise_completions')
+          .select('week_number, day_number, exercise_id')
           .eq('program_id', widget.programId)
           .eq('user_id', userId);
 
-      loggedSetsByDay.clear();
-
-      for (final log in progressLogs) {
+      final Map<String, Set<int>> completedExercisesByDay = {};
+      for (final log in completionLogs) {
         final key = '${log['week_number']}-${log['day_number']}';
-
-        loggedSetsByDay[key] =
-            (loggedSetsByDay[key] ?? 0) + 1;
+        completedExercisesByDay.putIfAbsent(key, () => <int>{});
+        completedExercisesByDay[key]!.add(log['exercise_id'] as int);
       }
 
       // -----------------------------
-      // STEP 3: ENGINE EVALUATION
+      // STEP 3: MARK DAY COMPLETE WHEN ALL EXERCISES DONE
       // -----------------------------
       completedDaysByWeek.clear();
 
-      requiredSetsByDay.forEach((key, required) {
-      final logged = loggedSetsByDay[key] ?? 0;
-
-      if (logged >= required) {
+      requiredExercisesByDay.forEach((key, required) {
+      final completed = completedExercisesByDay[key] ?? <int>{};
+      if (completed.length >= required.length) {
       final parts = key.split('-');
       final week = int.parse(parts[0]);
       final day = int.parse(parts[1]);
-
-      completedDaysByWeek
-          .putIfAbsent(week, () => {})
-          .add(day);
+      completedDaysByWeek.putIfAbsent(week, () => {}).add(day);
       }
       });
 
