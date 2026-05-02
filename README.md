@@ -75,14 +75,4 @@ The goal of Legion Fitness is:
 
 > To make fitness training structured, adaptive, and progressive instead of random and inconsistent.
 
----
 
-## 🛠️ Setup Instructions
-
-### Backend (Flask)
-
-```bash
-git clone https://github.com/your-username/legion-fitness.git
-cd legion-fitness
-pip install -r requirements.txt
-flask run
