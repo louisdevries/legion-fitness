@@ -8,8 +8,14 @@ import '../models/saved_route.dart';
 class RouteService {
   static final supabase = Supabase.instance.client;
 
-  static Future<void> saveRoute(SavedRoute route) async {
-    await supabase.from('saved_routes').insert(route.toMap());
+  /// Save a route and return the inserted row (so caller gets the new id).
+  static Future<SavedRoute> saveRoute(SavedRoute route) async {
+    final inserted = await supabase
+        .from('saved_routes')
+        .insert(route.toMap())
+        .select()
+        .single();
+    return SavedRoute.fromMap(inserted);
   }
 
   static Future<List<SavedRoute>> getRoutes(String userId) async {
@@ -23,6 +29,20 @@ class RouteService {
 
   static Future<void> deleteRoute(int id) async {
     await supabase.from('saved_routes').delete().eq('id', id);
+  }
+
+  /// Best (smallest) duration_seconds for a given route, or null if never run.
+  static Future<int?> getBestTimeSecondsForRoute(int routeId) async {
+    final response = await supabase
+        .from('outdoor_runs')
+        .select('duration_seconds')
+        .eq('route_id', routeId)
+        .order('duration_seconds', ascending: true)
+        .limit(1)
+        .maybeSingle();
+
+    if (response == null) return null;
+    return (response['duration_seconds'] as num).toInt();
   }
 
   /// Snaps a list of points to the nearest roads using OSRM Match API
@@ -46,19 +66,22 @@ class RouteService {
 
     // Use 'foot' profile for better running route matching
     // Use 'radiuses' to give the matcher some flexibility (30 meters)
-    final radiuses = List.generate(sampledPoints.length, (_) => '30').join(';');
-    
+    final radiuses =
+    List.generate(sampledPoints.length, (_) => '30').join(';');
+
     final url = 'https://router.project-osrm.org/match/v1/foot/$coordinates'
         '?overview=full'
         '&geometries=polyline'
         '&radiuses=$radiuses';
 
     try {
-      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
+      final response =
+      await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        if (data['code'] == 'Ok' && data['matchings'] != null && data['matchings'].isNotEmpty) {
-          // Extract geometry from the best matching
+        if (data['code'] == 'Ok' &&
+            data['matchings'] != null &&
+            data['matchings'].isNotEmpty) {
           final geometry = data['matchings'][0]['geometry'];
           final snapped = _decodePolyline(geometry);
           if (snapped.isNotEmpty) return snapped;
@@ -97,11 +120,9 @@ class RouteService {
       int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
       lng += dlng;
 
-      points.add(LatLng(lat / 1E5, lng / 1E5));
+      points.add(LatLng(lat / 1e5, lng / 1e5));
     }
+
     return points;
   }
-
-
-
 }

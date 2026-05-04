@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'widgets/loading_overlay.dart';
+import 'package:flutter_map/flutter_map.dart';
 
 // Screens
 import 'auth/welcome_screen.dart';
@@ -57,6 +58,18 @@ class AppSettings {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Configure flutter_map's built-in tile cache.
+  BuiltInMapCachingProvider.getOrCreateInstance(
+    maxCacheSize: 2 * 1024 * 1024 * 1024,
+    overrideFreshAge: const Duration(days: 30),
+    tileKeyGenerator: (url) {
+      final uri = Uri.parse(url);
+      final cleaned = uri.replace(queryParameters: Map.of(uri.queryParameters)
+        ..remove('access_token'));
+      return cleaned.toString();
+    },
+  );
 
   await Supabase.initialize(
     url: 'https://nvfoyrffwmufohcfppac.supabase.co',

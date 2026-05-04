@@ -12,6 +12,7 @@ class RunService {
     required double distanceMeters,
     required double? avgPace,
     required List<LatLng> route,
+    int? routeId, // 🆕 optional saved-route this run was attempting
   }) async {
     final routeJson = route
         .map((p) => {
@@ -28,6 +29,7 @@ class RunService {
       'distance_meters': distanceMeters,
       'avg_pace_min_per_km': avgPace,
       'route': routeJson,
+      if (routeId != null) 'route_id': routeId,
     });
 
     return response;

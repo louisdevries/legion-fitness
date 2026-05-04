@@ -7,7 +7,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/services.dart';
 
-// Use existing models and services
 import '../models/saved_route.dart';
 import '../services/route_service.dart';
 import '../services/location_service.dart';
@@ -16,10 +15,10 @@ import '../utils/map_gesture_handler.dart';
 import '../models/run_state.dart';
 import '../main.dart';
 import '../services/run_service.dart';
+import '../widgets/address_route_builder_sheet.dart';
 
-const String mapboxToken = "pk.eyJ1IjoibG91aXNkZXZyaWVzIiwiYSI6ImNtbnlsZ3d1dDAzMXgycXNlcXlyaHJrdmwifQ.bDTfupr74bI5qnK7VCgBHg";
-
-
+const String mapboxToken =
+    "pk.eyJ1IjoibG91aXNkZXZyaWVzIiwiYSI6ImNtbnlsZ3d1dDAzMXgycXNlcXlyaHJrdmwifQ.bDTfupr74bI5qnK7VCgBHg";
 
 class OutdoorRunScreen extends StatefulWidget {
   final Function(bool)? onRunModeChanged;
@@ -32,6 +31,9 @@ class OutdoorRunScreen extends StatefulWidget {
 
 class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
   final MapController _mapController = MapController();
+  final GlobalKey _mapKey = GlobalKey();
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
   StreamSubscription<LatLng>? _positionStream;
   Timer? _timer;
   MapGestureHandler? _gestureHandler;
@@ -39,8 +41,14 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
 
   late RunState _state;
 
-  // 🔒 NEW: lock mode
   bool _isLocked = false;
+  bool _panInsteadOfDraw = false;
+  double _unlockProgress = 0.0;
+
+  // Address builder controller — lives across the screen lifecycle.
+  AddressBuilderController? _addressController;
+  PersistentBottomSheetController? _addressSheetController;
+  bool _addressSheetOpen = false;
 
   @override
   void initState() {
@@ -55,6 +63,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
     _timer?.cancel();
     _positionStream?.cancel();
     LocationService.stopBackgroundMode();
+    _addressController?.dispose();
     super.dispose();
   }
 
@@ -90,8 +99,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
   Future<void> _startRun() async {
     await LocationService.startBackgroundMode();
     _startTime = DateTime.now();
-
-    widget.onRunModeChanged?.call(true); // 🔥 ENTER RUN MODE
+    widget.onRunModeChanged?.call(true);
 
     setState(() {
       _state = _state.copyWith(
@@ -103,16 +111,14 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
         plannedRoute: [],
         routePoints: [],
       );
-
       _isLocked = true;
     });
 
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!_state.isPaused && mounted) {
         setState(() {
-          _state = _state.copyWith(
-            elapsedSeconds: _state.elapsedSeconds + 1,
-          );
+          _state =
+              _state.copyWith(elapsedSeconds: _state.elapsedSeconds + 1);
         });
       }
     });
@@ -124,7 +130,6 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
 
   void _handleLocationUpdate(LatLng newPoint) {
     double distance = _state.totalDistanceMeters;
-
     if (_state.actualRunPath.isNotEmpty) {
       final last = _state.actualRunPath.last;
       distance += Geolocator.distanceBetween(
@@ -145,7 +150,6 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
           totalDistanceMeters: distance,
         );
       });
-
       _mapController.move(newPoint, _mapController.camera.zoom);
     }
   }
@@ -158,16 +162,18 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
     _timer?.cancel();
     _positionStream?.cancel();
     LocationService.stopBackgroundMode();
-
     widget.onRunModeChanged?.call(false);
 
     final user = Supabase.instance.client.auth.currentUser;
+    final attemptedRouteId = _state.selectedRoute?.id;
+    final priorBest = attemptedRouteId != null
+        ? await RouteService.getBestTimeSecondsForRoute(attemptedRouteId)
+        : null;
 
     if (user != null && _startTime != null) {
       try {
         final endTime = DateTime.now();
 
-        // ✅ ADD CHECK HERE
         if (_state.totalDistanceMeters < 50) {
           _showSnackBar("Run too short to save");
         } else {
@@ -184,9 +190,23 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
             distanceMeters: _state.totalDistanceMeters,
             avgPace: avgPace,
             route: _state.actualRunPath,
+            routeId: attemptedRouteId,
           );
 
-          _showSnackBar("Run saved successfully ✅");
+          if (attemptedRouteId != null) {
+            if (priorBest == null) {
+              _showSnackBar(
+                  "Run saved ✅ — first time on '${_state.selectedRoute!.name}'!");
+            } else if (_state.elapsedSeconds < priorBest) {
+              _showSnackBar(
+                  "🏆 New best on '${_state.selectedRoute!.name}'! ${_formatDuration(_state.elapsedSeconds)} (was ${_formatDuration(priorBest)})");
+            } else {
+              _showSnackBar(
+                  "Run saved ✅ — best on this route is still ${_formatDuration(priorBest)}");
+            }
+          } else {
+            _showSnackBar("Run saved successfully ✅");
+          }
         }
       } catch (e) {
         _showSnackBar("Failed to save run ❌");
@@ -201,7 +221,6 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
         routePoints: List.from(_state.actualRunPath),
         plannedRoute: [],
       );
-
       _isLocked = false;
     });
   }
@@ -214,23 +233,32 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
         isDrawing: !_state.isDrawing,
         routePoints: _state.isDrawing ? _state.routePoints : [],
         rawDrawnPoints: _state.isDrawing ? _state.rawDrawnPoints : [],
-        totalDistanceMeters: _state.isDrawing ? _state.totalDistanceMeters : 0,
+        totalDistanceMeters:
+        _state.isDrawing ? _state.totalDistanceMeters : 0,
         clearSelectedRoute: !_state.isDrawing,
         plannedRoute: [],
       );
+      _panInsteadOfDraw = false;
     });
 
     if (_state.isDrawing) {
       _gestureHandler = MapGestureHandler(
         mapController: _mapController,
-        context: context,
+        mapKey: _mapKey,
       );
     }
   }
 
-  void _handlePanStart(DragStartDetails details) {
-    if (!_state.isDrawing || _isLocked) return;
+  void _toggleDrawPanMode() {
+    setState(() {
+      _panInsteadOfDraw = !_panInsteadOfDraw;
+      _state = _state.copyWith(isCurrentlyDrawing: false);
+      _gestureHandler?.resetOffset();
+    });
+  }
 
+  void _handlePanStart(DragStartDetails details) {
+    if (!_state.isDrawing || _isLocked || _panInsteadOfDraw) return;
     final point = _gestureHandler?.offsetToLatLng(details.localPosition);
     if (point != null) {
       setState(() {
@@ -244,34 +272,34 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
   }
 
   void _handlePanUpdate(DragUpdateDetails details) {
-    if (!_state.isDrawing || !_state.isCurrentlyDrawing || _isLocked) return;
-
+    if (!_state.isDrawing ||
+        !_state.isCurrentlyDrawing ||
+        _isLocked ||
+        _panInsteadOfDraw) {
+      return;
+    }
     if (_gestureHandler!.shouldAddPoint(details.localPosition)) {
       final point = _gestureHandler!.offsetToLatLng(details.localPosition);
       if (point != null) {
         final updated = List<LatLng>.from(_state.rawDrawnPoints)..add(point);
         final smoothed = RouteUtils.smoothRoute(updated);
-
         setState(() {
           _state = _state.copyWith(
             rawDrawnPoints: updated,
             routePoints: smoothed,
-            totalDistanceMeters: RouteUtils.calculateRouteDistance(smoothed),
+            totalDistanceMeters:
+            RouteUtils.calculateRouteDistance(smoothed),
           );
         });
-
         _gestureHandler!.updateLastOffset(details.localPosition);
       }
     }
   }
 
   void _handlePanEnd(DragEndDetails details) {
-    if (!_state.isDrawing) return;
-
+    if (!_state.isDrawing || _panInsteadOfDraw) return;
     _gestureHandler?.resetOffset();
-
     final smoothed = RouteUtils.smoothRoute(_state.rawDrawnPoints);
-
     setState(() {
       _state = _state.copyWith(
         isCurrentlyDrawing: false,
@@ -300,7 +328,273 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
         totalDistanceMeters: 0,
         clearSelectedRoute: true,
       );
+      _panInsteadOfDraw = false;
     });
+  }
+
+  // ==================== SAVE / SELECT ROUTES ====================
+
+  Future<void> _saveDrawnRoute() async {
+    if (_state.routePoints.length < 2) {
+      _showSnackBar("Draw a route first");
+      return;
+    }
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      _showSnackBar("You must be signed in to save routes");
+      return;
+    }
+
+    final name = await _promptForRouteName();
+    if (name == null || name.isEmpty) return;
+
+    await _persistRoute(
+      userId: user.id,
+      name: name,
+      points: _state.routePoints,
+      distanceMeters: _state.totalDistanceMeters,
+      exitDrawing: true,
+    );
+  }
+
+  Future<void> _persistRoute({
+    required String userId,
+    required String name,
+    required List<LatLng> points,
+    required double distanceMeters,
+    required bool exitDrawing,
+  }) async {
+    try {
+      final route = SavedRoute(
+        userId: userId,
+        name: name,
+        points: points,
+        distanceKm: distanceMeters / 1000.0,
+      );
+      final inserted = await RouteService.saveRoute(route);
+
+      if (!mounted) return;
+      setState(() {
+        _state = _state.copyWith(
+          savedRoutes: [..._state.savedRoutes, inserted],
+          selectedRoute: inserted,
+          isDrawing: exitDrawing ? false : _state.isDrawing,
+          routePoints: inserted.points,
+          rawDrawnPoints: [],
+        );
+        if (exitDrawing) _panInsteadOfDraw = false;
+      });
+
+      if (inserted.points.isNotEmpty) {
+        _mapController.move(
+            inserted.points.first, _mapController.camera.zoom);
+      }
+      _showSnackBar("Route '$name' saved ✅");
+    } catch (e) {
+      developer.log("Save route error: $e");
+      _showSnackBar("Failed to save route ❌");
+    }
+  }
+
+  Future<String?> _promptForRouteName({String? initial}) async {
+    final controller = TextEditingController(text: initial ?? '');
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Name this route"),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: "e.g. Park loop"),
+          textCapitalization: TextCapitalization.sentences,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text("Save"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _selectRoute(SavedRoute route) {
+    setState(() {
+      _state = _state.copyWith(
+        selectedRoute: route,
+        isDrawing: false,
+        routePoints: route.points,
+        rawDrawnPoints: [],
+        totalDistanceMeters: route.distanceKm * 1000,
+        plannedRoute: [],
+      );
+      _panInsteadOfDraw = false;
+    });
+    if (route.points.isNotEmpty) {
+      _mapController.move(route.points.first, _mapController.camera.zoom);
+    }
+  }
+
+  void _clearSelectedRoute() {
+    setState(() {
+      _state = _state.copyWith(
+        clearSelectedRoute: true,
+        routePoints: [],
+        totalDistanceMeters: 0,
+      );
+    });
+  }
+
+  Future<void> _deleteSavedRoute(SavedRoute route) async {
+    if (route.id == null) return;
+    try {
+      await RouteService.deleteRoute(route.id!);
+      if (!mounted) return;
+      setState(() {
+        final updated =
+        _state.savedRoutes.where((r) => r.id != route.id).toList();
+        _state = _state.copyWith(
+          savedRoutes: updated,
+          clearSelectedRoute: _state.selectedRoute?.id == route.id,
+          routePoints:
+          _state.selectedRoute?.id == route.id ? [] : _state.routePoints,
+        );
+      });
+      _showSnackBar("Route deleted");
+    } catch (e) {
+      developer.log("Delete route error: $e");
+      _showSnackBar("Failed to delete route ❌");
+    }
+  }
+
+  void _openRoutesSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          maxChildSize: 0.9,
+          minChildSize: 0.3,
+          builder: (ctx, scrollController) {
+            return _RoutesSheet(
+              routes: _state.savedRoutes,
+              selectedId: _state.selectedRoute?.id,
+              scrollController: scrollController,
+              onSelect: (r) {
+                Navigator.pop(ctx);
+                _selectRoute(r);
+              },
+              onDelete: (r) async {
+                final confirmed = await showDialog<bool>(
+                  context: ctx,
+                  builder: (dctx) => AlertDialog(
+                    title: const Text("Delete route?"),
+                    content: Text(
+                        "'${r.name}' will be removed. Past runs against it are kept."),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dctx, false),
+                        child: const Text("Cancel"),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red),
+                        onPressed: () => Navigator.pop(dctx, true),
+                        child: const Text("Delete"),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  await _deleteSavedRoute(r);
+                  if (mounted && Navigator.canPop(ctx)) Navigator.pop(ctx);
+                }
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ==================== ADDRESS-BASED ROUTE BUILDER ====================
+
+  void _openAddressBuilder() {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      _showSnackBar("You must be signed in to save routes");
+      return;
+    }
+    if (_addressSheetOpen) return; // already open
+
+    _addressController?.dispose();
+    _addressController = AddressBuilderController();
+    setState(() => _addressSheetOpen = true);
+
+    // 🆕 Use Scaffold.showBottomSheet (non-modal) so the map behind is
+    // still tappable. Modal sheets have a barrier that intercepts taps.
+    _addressSheetController = _scaffoldKey.currentState!.showBottomSheet(
+          (ctx) {
+        return AddressRouteBuilderSheet(
+          controller: _addressController!,
+          userLocation: _state.currentPosition,
+          onClose: () {
+            _addressSheetController?.close();
+          },
+          onRouteBuilt: (built) async {
+            final name = await _promptForRouteName(
+              initial: built.summary.length > 60
+                  ? built.summary.substring(0, 60)
+                  : built.summary,
+            );
+            if (name == null || name.isEmpty) return;
+            await _persistRoute(
+              userId: user.id,
+              name: name,
+              points: built.points,
+              distanceMeters: built.distanceMeters,
+              exitDrawing: false,
+            );
+            _addressSheetController?.close();
+          },
+        );
+      },
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      enableDrag: false,
+    );
+
+    _addressSheetController!.closed.whenComplete(() {
+      if (mounted) {
+        setState(() => _addressSheetOpen = false);
+      }
+    });
+  }
+
+  // Called by the FlutterMap when the user taps. Only forwards the tap when
+  // the address sheet is in pin-pick mode.
+  void _handleMapTap(TapPosition tapPos, LatLng latlng) {
+    final ctrl = _addressController;
+    if (ctrl != null && ctrl.awaitingPin.value) {
+      ctrl.deliverPick(latlng);
+    }
+  }
+
+  // ==================== HELPERS ====================
+
+  String _formatDuration(int seconds) {
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return "${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
   }
 
   void _showSnackBar(String message) {
@@ -322,6 +616,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
     return WillPopScope(
       onWillPop: () async => !_isLocked,
       child: Scaffold(
+        key: _scaffoldKey,
         appBar: _buildAppBar(),
         body: Stack(
           children: [
@@ -333,7 +628,6 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                 _buildControls(),
               ],
             ),
-
             if (_isLocked) _buildLockOverlay(),
           ],
         ),
@@ -345,12 +639,25 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
     return AppBar(
       title: const Text("Outdoor Run"),
       actions: [
+        if (!_state.isRunning)
+          IconButton(
+            tooltip: "My routes",
+            icon: const Icon(Icons.route),
+            onPressed: _openRoutesSheet,
+          ),
+        if (!_state.isRunning)
+          IconButton(
+            tooltip: "Build by address",
+            icon: const Icon(Icons.alt_route),
+            onPressed: _openAddressBuilder,
+          ),
         IconButton(
           icon: Icon(_isLocked ? Icons.lock : Icons.lock_open),
           onPressed: _toggleLock,
         ),
         if (!_state.isRunning)
           IconButton(
+            tooltip: _state.isDrawing ? "Done" : "Draw a route",
             icon: Icon(_state.isDrawing ? Icons.check : Icons.edit),
             onPressed: _toggleDrawing,
           ),
@@ -372,70 +679,177 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
         ),
       );
     }
-
+    if (_state.isDrawing) {
+      final isPan = _panInsteadOfDraw;
+      return Container(
+        padding: const EdgeInsets.all(8),
+        color: (isPan ? Colors.orange : Colors.blue).withValues(alpha: 0.15),
+        child: Row(
+          children: [
+            Icon(
+              isPan ? Icons.pan_tool_alt : Icons.edit,
+              color: isPan ? Colors.orange : Colors.blue,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                isPan
+                    ? "Pan mode — drag to move the map, pinch to zoom"
+                    : "Draw mode — drag to draw your route",
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    if (_state.selectedRoute != null && !_state.isRunning) {
+      return Container(
+        padding: const EdgeInsets.all(8),
+        color: Colors.purple.withValues(alpha: 0.15),
+        child: Row(
+          children: [
+            const Icon(Icons.flag, color: Colors.purple),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                "Attempting: ${_state.selectedRoute!.name} • "
+                    "${_state.selectedRoute!.distanceKm.toStringAsFixed(2)} km",
+              ),
+            ),
+            IconButton(
+              tooltip: "Clear",
+              icon: const Icon(Icons.close, size: 18),
+              onPressed: _clearSelectedRoute,
+            ),
+          ],
+        ),
+      );
+    }
     return null;
   }
 
   Widget _buildMap() {
-    return GestureDetector(
-      onPanStart: (!_isLocked && _state.isDrawing) ? _handlePanStart : null,
-      onPanUpdate: (!_isLocked && _state.isDrawing) ? _handlePanUpdate : null,
-      onPanEnd: (!_isLocked && _state.isDrawing) ? _handlePanEnd : null,
+    final bool drawingActive =
+        _state.isDrawing && !_isLocked && !_panInsteadOfDraw;
 
-      child: FlutterMap(
-        mapController: _mapController,
-        options: MapOptions(
-          initialCenter: _state.currentPosition!,
-          initialZoom: 17,
-          interactionOptions: InteractionOptions(
-            flags: _isLocked
-                ? InteractiveFlag.none
-                : InteractiveFlag.all,
-          ),
-        ),
-        children: [
-          TileLayer(
-            urlTemplate:
-            "https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token=$mapboxToken",
-            tileSize: 512,
-            zoomOffset: -1,
-          ),
-
-          if (_state.isRunning && _state.actualRunPath.isNotEmpty)
-            PolylineLayer(
-              polylines: [
-                Polyline(
-                  points: _state.actualRunPath,
-                  strokeWidth: 4,
-                  color: Colors.green,
-                ),
-              ],
+    return Stack(
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onPanStart: drawingActive ? _handlePanStart : null,
+          onPanUpdate: drawingActive ? _handlePanUpdate : null,
+          onPanEnd: drawingActive ? _handlePanEnd : null,
+          child: FlutterMap(
+            key: _mapKey,
+            mapController: _mapController,
+            options: MapOptions(
+              initialCenter: _state.currentPosition!,
+              initialZoom: 17,
+              interactionOptions: InteractionOptions(
+                flags: (_isLocked || drawingActive)
+                    ? InteractiveFlag.none
+                    : InteractiveFlag.all,
+              ),
+              onTap: _handleMapTap,
             ),
-
-          if (_state.routePoints.isNotEmpty)
-            PolylineLayer(
-              polylines: [
-                Polyline(
-                  points: _state.routePoints,
-                  strokeWidth: 4,
-                  color: Colors.blue,
+            children: [
+              TileLayer(
+                urlTemplate:
+                "https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token=$mapboxToken",
+                tileSize: 512,
+                zoomOffset: -1,
+                tileProvider: NetworkTileProvider(), // optional — this is the default
+              ),
+              if (_state.selectedRoute != null &&
+                  _state.selectedRoute!.points.isNotEmpty)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: _state.selectedRoute!.points,
+                      strokeWidth: 6,
+                      color: Colors.purple.withValues(alpha: 0.35),
+                      borderStrokeWidth: 2,
+                      borderColor: Colors.purple.withValues(alpha: 0.5),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-
-          MarkerLayer(
-            markers: [
-              Marker(
-                point: _state.currentPosition!,
-                width: 40,
-                height: 40,
-                child: const Icon(Icons.my_location, color: Colors.red),
+              if (_state.isRunning && _state.actualRunPath.isNotEmpty)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: _state.actualRunPath,
+                      strokeWidth: 4,
+                      color: Colors.green,
+                    ),
+                  ],
+                ),
+              if (_state.selectedRoute == null &&
+                  _state.routePoints.isNotEmpty)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: _state.routePoints,
+                      strokeWidth: 4,
+                      color: Colors.blue,
+                    ),
+                  ],
+                ),
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: _state.currentPosition!,
+                    width: 40,
+                    height: 40,
+                    child: const Icon(Icons.my_location, color: Colors.red),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-      ),
+        ),
 
+        if (_state.isDrawing && !_isLocked)
+          Positioned(
+            top: 12,
+            right: 12,
+            child: Material(
+              elevation: 4,
+              shape: const CircleBorder(),
+              color: _panInsteadOfDraw ? Colors.orange : Colors.blue,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: _toggleDrawPanMode,
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  alignment: Alignment.center,
+                  child: Icon(
+                    _panInsteadOfDraw ? Icons.edit : Icons.pan_tool_alt,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+        // Crosshair shown when waiting for a pin tap.
+        if (_addressSheetOpen && _addressController != null)
+          ValueListenableBuilder<bool>(
+            valueListenable: _addressController!.awaitingPin,
+            builder: (ctx, awaiting, _) {
+              if (!awaiting) return const SizedBox.shrink();
+              return const IgnorePointer(
+                child: Center(
+                  child: Icon(
+                    Icons.add,
+                    size: 40,
+                    color: Colors.blue,
+                  ),
+                ),
+              );
+            },
+          ),
+      ],
     );
   }
 
@@ -483,6 +897,13 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
             if (_state.isDrawing) ...[
               const SizedBox(width: 8),
               ElevatedButton(
+                onPressed:
+                _state.routePoints.length >= 2 ? _saveDrawnRoute : null,
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                child: const Text("Save"),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
                 onPressed: _clearRoute,
                 child: const Text("Clear"),
               ),
@@ -515,7 +936,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
       ),
     );
   }
-  double _unlockProgress = 0.0;
+
   Widget _buildLockOverlay() {
     return Positioned.fill(
       child: Container(
@@ -531,8 +952,6 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                 style: TextStyle(color: Colors.white, fontSize: 18),
               ),
               const SizedBox(height: 20),
-
-              // 🔓 SLIDE BAR
               GestureDetector(
                 onHorizontalDragUpdate: (details) {
                   setState(() {
@@ -556,7 +975,6 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                   ),
                   child: Stack(
                     children: [
-                      // progress fill
                       FractionallySizedBox(
                         widthFactor: _unlockProgress,
                         child: Container(
@@ -566,8 +984,6 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                           ),
                         ),
                       ),
-
-                      // text
                       const Center(
                         child: Text(
                           "Slide to unlock",
@@ -582,6 +998,143 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ==========================================================================
+// Routes bottom sheet
+// ==========================================================================
+
+class _RoutesSheet extends StatelessWidget {
+  final List<SavedRoute> routes;
+  final int? selectedId;
+  final ScrollController scrollController;
+  final void Function(SavedRoute) onSelect;
+  final void Function(SavedRoute) onDelete;
+
+  const _RoutesSheet({
+    required this.routes,
+    required this.selectedId,
+    required this.scrollController,
+    required this.onSelect,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade400,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const Text(
+            "My Routes",
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          if (routes.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 32),
+              child: Text(
+                "No saved routes yet.\nTap the pencil to draw one, or the alt-route icon to build one by address.",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.separated(
+                controller: scrollController,
+                itemCount: routes.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (ctx, i) {
+                  final r = routes[i];
+                  final isSelected = r.id == selectedId;
+                  return _RouteTile(
+                    route: r,
+                    isSelected: isSelected,
+                    onTap: () => onSelect(r),
+                    onDelete: () => onDelete(r),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RouteTile extends StatelessWidget {
+  final SavedRoute route;
+  final bool isSelected;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+
+  const _RouteTile({
+    required this.route,
+    required this.isSelected,
+    required this.onTap,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(
+        Icons.route,
+        color: isSelected ? Colors.purple : Colors.grey,
+      ),
+      title: Text(
+        route.name,
+        style: TextStyle(
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+      subtitle: Row(
+        children: [
+          Text("${route.distanceKm.toStringAsFixed(2)} km"),
+          const SizedBox(width: 12),
+          if (route.id != null)
+            FutureBuilder<int?>(
+              future: RouteService.getBestTimeSecondsForRoute(route.id!),
+              builder: (ctx, snap) {
+                if (!snap.hasData || snap.data == null) {
+                  return const Text(
+                    "No runs yet",
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  );
+                }
+                final s = snap.data!;
+                final m = s ~/ 60;
+                final sec = s % 60;
+                return Row(
+                  children: [
+                    const Icon(Icons.emoji_events,
+                        size: 14, color: Colors.amber),
+                    const SizedBox(width: 4),
+                    Text("${m}m ${sec}s",
+                        style: const TextStyle(fontSize: 12)),
+                  ],
+                );
+              },
+            ),
+        ],
+      ),
+      trailing: IconButton(
+        icon: const Icon(Icons.delete_outline, color: Colors.red),
+        onPressed: onDelete,
+      ),
+      onTap: onTap,
     );
   }
 }
