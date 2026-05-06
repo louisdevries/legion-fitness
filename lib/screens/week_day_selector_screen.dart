@@ -4,6 +4,7 @@ import '../services/program_exercise_service.dart';
 import '../services/workout_engine_service.dart';
 import 'exercise_preview_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:legion_fitness/main.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -346,27 +347,41 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                       onTap: locked
                           ? null
                           : () async {
-                        final exercises =
-                        await ProgramExerciseService
-                            .fetchExercisesForDay(
-                          programId: widget.programId,
-                          weekNumber: selectedWeek,
-                          dayNumber: day,
-                        );
+                        AppSettings.showLoading();
+                        try {
+                          final exercises =
+                          await ProgramExerciseService
+                              .fetchExercisesForDay(
+                            programId: widget.programId,
+                            weekNumber: selectedWeek,
+                            dayNumber: day,
+                          );
 
-                        if (!mounted) return;
+                          if (!mounted) return;
 
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ExercisePreviewScreen(
-                              exercises: exercises,
-                              programId: widget.programId,
-                              weekNumber: selectedWeek,
-                              dayNumber: day,
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ExercisePreviewScreen(
+                                exercises: exercises,
+                                programId: widget.programId,
+                                weekNumber: selectedWeek,
+                                dayNumber: day,
+                              ),
                             ),
-                          ),
-                        );
+                          );
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text("Failed to load workout: $e"),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        } finally {
+                          AppSettings.hideLoading();
+                        }
                       },
                     ),
                   );

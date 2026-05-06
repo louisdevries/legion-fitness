@@ -6,13 +6,12 @@ import '../models/exercise_runner_state.dart';
 import '../services/exercise_runner_service.dart';
 import '../utils/exercise_category_utils.dart';
 import '../utils/exercise_runner_utils.dart';
-import 'widgets/exercise_runner/category_badge.dart';
-import 'widgets/exercise_runner/coaching_cue_box.dart';
-import 'widgets/exercise_runner/exercise_media.dart';
-import 'widgets/exercise_runner/progress_ring.dart';
-import 'widgets/exercise_runner/rest_controls.dart';
-import 'widgets/exercise_runner/timer_adjust_controls.dart';
-import 'widgets/exercise_runner/workout_progress_bar.dart';
+import 'Widgets/exercise_runner/category_badge.dart';
+import 'Widgets/exercise_runner/coaching_cue_box.dart';
+import 'Widgets/exercise_runner/exercise_media.dart';
+import 'Widgets/exercise_runner/progress_ring.dart';
+import 'Widgets/exercise_runner/rest_controls.dart';
+import 'Widgets/exercise_runner/workout_progress_bar.dart';
 import '../services/sync_service.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -160,7 +159,14 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
   // Supersets are always rep-based
   bool get _isTimed =>
       !_isSuperset &&
+          !_isUntilFailure &&
           ExerciseRunnerUtils.isTimedExercise(_activeExercise);
+
+  bool get _isUntilFailure =>
+      ExerciseRunnerUtils.isUntilFailure(_activeExercise);
+
+  bool get _isEachSide =>
+      ExerciseRunnerUtils.isEachSide(_activeExercise);
 
   String get _category =>
       ExerciseCategoryUtils.resolveCategory(_currentExercise);
@@ -322,6 +328,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
         'completedSets': _s.completedSets,
         'usingAlternative': _s.usingAlternative,
         'onSupersetPartner': _s.onSupersetPartner,
+        'onSecondSide': _s.onSecondSide,
         'isResting': _s.isResting,
         'remainingSeconds': _s.remainingSeconds,
         'totalSeconds': _s.totalSeconds,
@@ -365,6 +372,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
         completedSets: data['completedSets'] as int? ?? 0,
         usingAlternative: data['usingAlternative'] as bool? ?? false,
         onSupersetPartner: data['onSupersetPartner'] as bool? ?? false,
+        onSecondSide: data['onSecondSide'] as bool? ?? false,
         isResting: wasResting,
         remainingSeconds: data['remainingSeconds'] as int? ?? 0,
         totalSeconds: data['totalSeconds'] as int? ?? 0,
@@ -384,10 +392,20 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     await prefs.remove(_resumeKey);
   }
 
+  void _togglePause() {
+    setState(() => _s = _s.copyWith(isPaused: !_s.isPaused));
+    _saveState();
+  }
+
   // ── Exercise start ───────────────────────────────────────────────
   Future<void> _startCurrentExercise() async {
     _timer?.cancel();
-    _s = _s.copyWith(isResting: false, isPaused: false, mediaReady: false);
+    _s = _s.copyWith(
+      isResting: false,
+      isPaused: false,
+      mediaReady: false,
+      onSecondSide: _s.onSecondSide,
+    );
     await _saveState();
     if (mounted) setState(() {});
 
@@ -454,6 +472,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
         t.cancel();
         return;
       }
+      if (_s.isPaused) return;
       if (_s.remainingSeconds <= 1) {
         t.cancel();
         _proceedToNext(nextIndex, nextSet);
@@ -484,6 +503,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
       currentIndex: nextIndex,
       currentSet: nextSet,
       onSupersetPartner: false,
+      onSecondSide: false,
       usingAlternative: nextSet == 1 ? false : _s.usingAlternative,
     );
     _startCurrentExercise();
@@ -496,19 +516,32 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
 
     if (logSet) {
       final setIndexToLog = _s.currentSet;
-      int reps = 0;
+      int repsLogged = 0;
+      int? secondsLogged;
 
-      final prescribed = _prescribedRepsForCurrentSet;
-      await showModalBottomSheet(
-        context: context,
-        isDismissible: false,
-        builder: (_) => _RepsPicker(
-          initialReps: prescribed,
-          onConfirm: (v) => reps = v,
-        ),
-      );
+      // Decide what to log and whether to ask the user.
+      if (_isUntilFailure) {
+        // Until-failure: don't ask, just log a 0 with a marker. The set
+        // counts as completed; rep count is intentionally not captured.
+        repsLogged = 0;
+      } else if (_isTimed) {
+        // Timed: log the duration (already done — no picker needed).
+        secondsLogged = _s.totalSeconds;
+        repsLogged = 0;
+      } else {
+        // Rep-based: ask the user how many they did.
+        final prescribed = _prescribedRepsForCurrentSet;
+        await showModalBottomSheet(
+          context: context,
+          isDismissible: false,
+          builder: (_) => _RepsPicker(
+            initialReps: prescribed,
+            onConfirm: (v) => repsLogged = v,
+          ),
+        );
+      }
 
-      // Log the active exercise (primary or superset partner)
+      // Log the active exercise (primary, superset partner, or current side).
       final exerciseToLog =
       _onSupersetPartner && _isSuperset ? _supersetPartner! : _currentExercise;
       final exerciseIdToLog =
@@ -516,8 +549,8 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
 
       final newSet = ExerciseSetResult(
         setIndex: setIndexToLog,
-        reps: reps,
-        durationSeconds: null,
+        reps: repsLogged,
+        durationSeconds: secondsLogged,
       );
 
       _s = _s.copyWith(
@@ -532,11 +565,11 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
           ..._currentExercise,
           'exercise_id': exerciseIdToLog,
         },
-        isTimed: false,
-        lastSelectedSeconds: 0,
-        lastSelectedReps: reps,
+        isTimed: _isTimed,
+        lastSelectedSeconds: secondsLogged ?? 0,
+        lastSelectedReps: repsLogged,
         setIndex: setIndexToLog,
-        repsCompleted: reps,
+        repsCompleted: repsLogged,
       );
 
       await _svc.queueCompletion(
@@ -545,31 +578,39 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
         dayNumber: widget.dayNumber,
         exerciseId: exerciseIdToLog,
         setIndex: setIndexToLog,
-        repsCompleted: reps,
+        repsCompleted: repsLogged,
       );
     }
 
+    // ── Each-side flow ───────────────────────────────────────────
+    // After the FIRST side, switch to the second — no rest.
+    if (_isEachSide && !_s.onSecondSide) {
+      setState(() => _s = _s.copyWith(onSecondSide: true));
+      await _startCurrentExercise();
+      return;
+    }
+
     // ── Superset flow ────────────────────────────────────────────
-    // If we just finished the primary and there's a partner → go to partner
-    // If we just finished the partner → rest/next as normal
+    // After the primary, switch to the partner — no rest.
     if (_isSuperset && !_onSupersetPartner) {
-      // Move to superset partner — no rest
       setState(() => _s = _s.copyWith(onSupersetPartner: true));
       await _startCurrentExercise();
       return;
     }
 
     // ── Normal set completion flow ───────────────────────────────
+    // Reset onSecondSide for the next set so left starts again.
     final totalSetsForExercise = _currentExercise['sets'] as int? ?? 1;
     final justCompletedSet = _s.currentSet;
 
     if (justCompletedSet < totalSetsForExercise) {
+      _s = _s.copyWith(onSecondSide: false);
       _startRest(
         nextIndex: _s.currentIndex,
         nextSet: justCompletedSet + 1,
       );
     } else if (!_isLastExercise) {
-      _s = _s.copyWith(usingAlternative: false);
+      _s = _s.copyWith(usingAlternative: false, onSecondSide: false);
       _startRest(
         nextIndex: _s.currentIndex + 1,
         nextSet: 1,
@@ -670,12 +711,19 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
       onWillPop: _confirmExit,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(_appBarTitle),
+          title: Text(
+            _s.isResting
+                ? 'Rest'
+                : _isSuperset
+                ? 'Superset'
+                : _getCategoryLabel(_category),
+          ),
+          foregroundColor: Colors.white,
           backgroundColor: _s.isResting
               ? Colors.green
               : _isSuperset
               ? Colors.purple.shade700
-              : null,
+              : _getCategoryColor(_category),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () async {
@@ -684,96 +732,75 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
               }
             },
           ),
-          actions: [
-            if (!_s.isResting && _currentAlternative != null && !_isSuperset)
-              IconButton(
-                icon: Icon(_s.usingAlternative
-                    ? Icons.swap_horiz
-                    : Icons.sync_alt),
-                tooltip: _s.usingAlternative
-                    ? 'Switch to main'
-                    : 'Try easier version',
-                onPressed: _switchAlternative,
-              ),
-          ],
         ),
         body: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              if (!_s.isResting) CategoryBadge(category: _category),
-              if (!_s.isResting)
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 400),
-                  child: _isNewCategory()
-                      ? Column(
-                    key: ValueKey(_category),
-                    children: [
-                      Text(
-                        _getCategoryLabel(_category),
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: _getCategoryColor(_category),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Divider(thickness: 2),
-                    ],
-                  )
-                      : const SizedBox.shrink(),
-                ),
-              if (!_s.isResting)
+              if (!_s.isResting && !_isSuperset)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: WorkoutProgressBar(
-                    completed: _s.completedSets,
-                    total: _totalRequiredSets,
-                  ),
-                ),
-              const SizedBox(height: 8),
-
-              // ── Set counter + superset indicator ─────────────────
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Set ${_s.currentSet} / $_totalSets',
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                  if (_isSuperset)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.purple.shade100,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        _onSupersetPartner
-                            ? '2nd exercise'
-                            : '1st exercise',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.purple.shade700,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          ExerciseRunnerUtils.getName(_activeExercise),
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    )
-                  else if (_s.usingAlternative)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade100,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Text('Easier Version',
-                          style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.orange)),
-                    ),
-                ],
+                      if (_currentAlternative != null)
+                        IconButton(
+                          icon: Icon(_s.usingAlternative
+                              ? Icons.swap_horiz
+                              : Icons.sync_alt),
+                          tooltip: _s.usingAlternative
+                              ? 'Switch to main'
+                              : 'Try easier version',
+                          onPressed: _switchAlternative,
+                        ),
+                    ],
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: WorkoutProgressBar(
+                  completed: _s.completedSets,
+                  total: _totalRequiredSets,
+                ),
               ),
+
+              // ── Set counter + state chip ─────────────────────
+              if (!_s.isResting)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Set ${_s.currentSet} / $_totalSets',
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    if (_isSuperset)
+                      _Chip(
+                        label: _onSupersetPartner ? '2nd exercise' : '1st exercise',
+                        bg: Colors.purple.shade100,
+                        fg: Colors.purple.shade700,
+                      )
+                    else if (_isEachSide)
+                      _Chip(
+                        label: _s.onSecondSide ? 'Right side' : 'Left side',
+                        bg: Colors.teal.shade100,
+                        fg: Colors.teal.shade700,
+                      )
+                    else if (_s.usingAlternative)
+                        _Chip(
+                          label: 'Easier Version',
+                          bg: Colors.orange.shade100,
+                          fg: Colors.orange.shade700,
+                        ),
+                  ],
+                ),
 
               // ── Superset exercise name label ──────────────────────
               if (_isSuperset && !_s.isResting) ...[
@@ -791,9 +818,15 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
               const SizedBox(height: 12),
 
               if (_s.isResting) ...[
-                const Text('REST',
-                    style: TextStyle(
-                        fontSize: 48, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                ProgressRingCircle(
+                  remainingSeconds: _s.remainingSeconds,
+                  totalSeconds: _s.totalSeconds,
+                  isPaused: _s.isPaused,
+                  onTogglePause: _togglePause,
+                  onMinus: () => _adjustTimer(-5),
+                  onPlus: () => _adjustTimer(5),
+                ),
                 if (_nextActiveExercise != null)
                   NextExercisePreview(exercise: _nextActiveExercise!),
               ] else
@@ -803,22 +836,18 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
               if (!_s.isResting) CoachingCueBox(cues: coachingCues),
               const SizedBox(height: 16),
 
-              Expanded(
-                child: ProgressRing(
+              if (!_s.isResting)
+                ProgressRing(
                   isTimed: _isTimed,
-                  isResting: _s.isResting,
+                  isResting: false,
+                  isPaused: _s.isPaused,
                   remainingSeconds: _s.remainingSeconds,
                   totalSeconds: _s.totalSeconds,
                   quantityDisplay: quantityDisplay,
+                  onTogglePause: _isTimed ? _togglePause : null,
+                  onMinus: _isTimed ? () => _adjustTimer(-5) : null,
+                  onPlus: _isTimed ? () => _adjustTimer(5) : null,
                 ),
-              ),
-
-              if (_isTimed && !_s.isResting)
-                TimerAdjustControls(
-                  onMinus: () => _adjustTimer(-5),
-                  onPlus: () => _adjustTimer(5),
-                ),
-
               const SizedBox(height: 12),
 
               if (_s.isResting)
@@ -851,6 +880,32 @@ class _RepsPicker extends StatefulWidget {
 
   @override
   State<_RepsPicker> createState() => _RepsPickerState();
+}
+
+class _Chip extends StatelessWidget {
+  final String label;
+  final Color bg;
+  final Color fg;
+  const _Chip({required this.label, required this.bg, required this.fg});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: fg,
+        ),
+      ),
+    );
+  }
 }
 
 class _RepsPickerState extends State<_RepsPicker> {

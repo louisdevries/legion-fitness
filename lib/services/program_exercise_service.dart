@@ -170,7 +170,7 @@ class ProgramExerciseService {
 
         final altData = await supabase
             .from('exercises')
-            .select('id, name, media_url, coaching_cues, duration_type, min_quantity, max_quantity')
+            .select('id, name, media_url, coaching_cues')
             .eq('id', altExerciseId)
             .maybeSingle();
 
@@ -183,9 +183,10 @@ class ProgramExerciseService {
             'media_url': altData['media_url'] ?? '',
             'coaching_cues': altData['coaching_cues'] ?? '',
             'sets': detail?.alternativeSet ?? detail?.sets ?? 1,
-            'min_quantity': detail?.minAlternative ?? altData['min_quantity'] ?? minQ,
-            'max_quantity': detail?.maxAlternative ?? altData['max_quantity'] ?? maxQ,
-            'duration_type': detail?.alternativeDurationType ?? altData['duration_type'] ?? 'reps',
+            'min_quantity': detail?.minAlternative ?? minQ,
+            'max_quantity': detail?.maxAlternative ?? maxQ,
+            'duration_type':
+            detail?.alternativeDurationType ?? detail?.durationType ?? 'reps',
           };
         }
       }

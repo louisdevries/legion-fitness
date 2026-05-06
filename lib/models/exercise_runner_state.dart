@@ -6,7 +6,12 @@ class ExerciseRunnerState {
   final bool isResting;
   final bool isPaused;
   final bool usingAlternative;
-  final bool onSupersetPartner; // ← new
+  final bool onSupersetPartner;
+
+  /// True when the user is currently on the "right" side of an
+  /// each-side exercise (reps_each_side / seconds_each_side).
+  /// Mirrors onSupersetPartner — same flow pattern.
+  final bool onSecondSide;
 
   final int remainingSeconds;
   final int totalSeconds;
@@ -27,7 +32,8 @@ class ExerciseRunnerState {
     this.isResting = false,
     this.isPaused = false,
     this.usingAlternative = false,
-    this.onSupersetPartner = false, // ← new
+    this.onSupersetPartner = false,
+    this.onSecondSide = false,
     this.remainingSeconds = 0,
     this.totalSeconds = 0,
     this.lastSelectedReps = 0,
@@ -45,7 +51,8 @@ class ExerciseRunnerState {
       'isResting': isResting,
       'isPaused': isPaused,
       'usingAlternative': usingAlternative,
-      'onSupersetPartner': onSupersetPartner, // ← new
+      'onSupersetPartner': onSupersetPartner,
+      'onSecondSide': onSecondSide,
       'remainingSeconds': remainingSeconds,
       'totalSeconds': totalSeconds,
       'lastSelectedReps': lastSelectedReps,
@@ -63,7 +70,8 @@ class ExerciseRunnerState {
       isResting: json['isResting'] ?? false,
       isPaused: json['isPaused'] ?? false,
       usingAlternative: json['usingAlternative'] ?? false,
-      onSupersetPartner: json['onSupersetPartner'] ?? false, // ← new
+      onSupersetPartner: json['onSupersetPartner'] ?? false,
+      onSecondSide: json['onSecondSide'] ?? false,
       remainingSeconds: json['remainingSeconds'] ?? 0,
       totalSeconds: json['totalSeconds'] ?? 0,
       lastSelectedReps: json['lastSelectedReps'] ?? 0,
@@ -81,7 +89,8 @@ class ExerciseRunnerState {
     bool? isResting,
     bool? isPaused,
     bool? usingAlternative,
-    bool? onSupersetPartner, // ← new
+    bool? onSupersetPartner,
+    bool? onSecondSide,
     int? remainingSeconds,
     int? totalSeconds,
     int? lastSelectedReps,
@@ -97,7 +106,8 @@ class ExerciseRunnerState {
       isResting: isResting ?? this.isResting,
       isPaused: isPaused ?? this.isPaused,
       usingAlternative: usingAlternative ?? this.usingAlternative,
-      onSupersetPartner: onSupersetPartner ?? this.onSupersetPartner, // ← new
+      onSupersetPartner: onSupersetPartner ?? this.onSupersetPartner,
+      onSecondSide: onSecondSide ?? this.onSecondSide,
       remainingSeconds: remainingSeconds ?? this.remainingSeconds,
       totalSeconds: totalSeconds ?? this.totalSeconds,
       lastSelectedReps: lastSelectedReps ?? this.lastSelectedReps,
