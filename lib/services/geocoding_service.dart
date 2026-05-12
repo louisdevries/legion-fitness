@@ -21,63 +21,8 @@ class GeocodingService {
   static const String _mapboxToken =
       "pk.eyJ1IjoibG91aXNkZXZyaWVzIiwiYSI6ImNtbnlsZ3d1dDAzMXgycXNlcXlyaHJrdmwifQ.bDTfupr74bI5qnK7VCgBHg";
 
-  /// Forward-geocode a query string into ranked place suggestions.
-  static Future<List<GeocodeResult>> autocomplete(
-      String query, {
-        LatLng? proximity,
-        String? country = 'za',
-        int limit = 5,
-      }) async {
-    final trimmed = query.trim();
-    if (trimmed.isEmpty) return [];
-
-    final encoded = Uri.encodeComponent(trimmed);
-    final params = <String, String>{
-      'access_token': _mapboxToken,
-      'autocomplete': 'true',
-      'limit': '$limit',
-      'types': 'address,poi,place,locality,neighborhood,postcode',
-      if (country != null) 'country': country,
-      if (proximity != null)
-        'proximity': '${proximity.longitude},${proximity.latitude}',
-    };
-
-    final uri = Uri.https(
-      'api.mapbox.com',
-      '/geocoding/v5/mapbox.places/$encoded.json',
-      params,
-    );
-
-    try {
-      final resp =
-      await http.get(uri).timeout(const Duration(seconds: 6));
-      if (resp.statusCode != 200) {
-        developer.log('Mapbox geocode HTTP ${resp.statusCode}: ${resp.body}');
-        return [];
-      }
-
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      final features = (data['features'] as List?) ?? [];
-
-      return features.map<GeocodeResult>((f) {
-        final coords = (f['center'] as List).cast<num>();
-        final lng = coords[0].toDouble();
-        final lat = coords[1].toDouble();
-        final placeName = (f['place_name'] ?? f['text'] ?? '').toString();
-        final text = (f['text'] ?? placeName).toString();
-        return GeocodeResult(
-          displayName: placeName,
-          shortName: text,
-          location: LatLng(lat, lng),
-        );
-      }).toList();
-    } catch (e) {
-      developer.log('Mapbox geocode error: $e');
-      return [];
-    }
-  }
-
   /// Reverse-geocode a lat/lng into a human-readable place name.
+  /// Falls back to a coordinate label if the geocoder returns nothing.
   static Future<GeocodeResult> reverseGeocode(LatLng point) async {
     final params = <String, String>{
       'access_token': _mapboxToken,
@@ -116,6 +61,7 @@ class GeocodingService {
       developer.log('Mapbox reverse-geocode error: $e');
     }
 
+    // Fallback: coord-based label so the waypoint still has a usable name.
     final label = _coordLabel(point);
     return GeocodeResult(
       displayName: 'Pinned location ($label)',
@@ -124,23 +70,25 @@ class GeocodingService {
     );
   }
 
+  /// Reverse-geocode a list of points in parallel. Used to generate a
+  /// nice default route name like "9th Ave → Crots St → Park Rd".
+  static Future<List<GeocodeResult>> reverseGeocodeBatch(
+      List<LatLng> points) async {
+    return Future.wait(points.map(reverseGeocode));
+  }
+
   static String _coordLabel(LatLng p) =>
       '${p.latitude.toStringAsFixed(4)}, ${p.longitude.toStringAsFixed(4)}';
 
   /// Route through an ordered list of lat/lngs.
   ///
-  /// We hit the FOSSGIS demo servers at routing.openstreetmap.de — unlike
-  /// router.project-osrm.org (which silently treats every profile as
-  /// driving), this server actually has separate profile-specific endpoints:
-  /// `routed-foot`, `routed-car`, `routed-bike`.
-  ///
-  /// We request both foot and car in parallel, then pick whichever route
-  /// deviates LESS from the straight-line path connecting the user's
-  /// waypoints. This naturally fits both contexts:
+  /// Hits FOSSGIS's profile-specific OSRM servers (foot + car in parallel)
+  /// and picks the result with lower deviation from the user's straight-line
+  /// waypoint chain. This naturally fits both contexts:
   ///   - Suburban grid: car stays on streets while foot detours through
-  ///     alleys → car wins, lower deviation.
-  ///   - Park/campus: foot follows trails directly while car has to
-  ///     reach a road → foot wins.
+  ///     alleys → car wins (lower deviation).
+  ///   - Park/campus: foot follows trails directly while car has to reach
+  ///     a road → foot wins.
   static Future<List<LatLng>> routeThroughWaypoints(
       List<LatLng> waypoints) async {
     if (waypoints.length < 2) return waypoints;
@@ -154,7 +102,6 @@ class GeocodingService {
     final carRoute = results[1];
 
     if (footRoute.isEmpty && carRoute.isEmpty) {
-      // Both failed — fall back to the OSRM demo server as a last resort.
       developer.log(
           'Both FOSSGIS profiles failed, falling back to OSRM demo');
       return _fallbackRouteViaOsrmDemo(waypoints);
@@ -175,16 +122,13 @@ class GeocodingService {
     return footDev <= carDev ? footRoute : carRoute;
   }
 
-  /// Hit a specific FOSSGIS profile server. The URL path always says
-  /// `driving` — the server determines the profile. Wat.
   static Future<List<LatLng>> _routeWithProfile(
       String serverPath,
       List<LatLng> waypoints,
       ) async {
     try {
-      final coords = waypoints
-          .map((p) => '${p.longitude},${p.latitude}')
-          .join(';');
+      final coords =
+      waypoints.map((p) => '${p.longitude},${p.latitude}').join(';');
 
       final uri = Uri.parse(
         'https://routing.openstreetmap.de/$serverPath/route/v1/driving/$coords'
@@ -214,14 +158,11 @@ class GeocodingService {
     }
   }
 
-  /// Last-resort fallback to the OSRM demo server. Only used if FOSSGIS is
-  /// completely unreachable.
   static Future<List<LatLng>> _fallbackRouteViaOsrmDemo(
       List<LatLng> waypoints) async {
     try {
-      final coords = waypoints
-          .map((p) => '${p.longitude},${p.latitude}')
-          .join(';');
+      final coords =
+      waypoints.map((p) => '${p.longitude},${p.latitude}').join(';');
       final uri = Uri.parse(
         'https://router.project-osrm.org/route/v1/driving/$coords'
             '?overview=full&geometries=geojson',
@@ -244,8 +185,6 @@ class GeocodingService {
     }
   }
 
-  /// Sum of distances of each routed point from the closest segment of the
-  /// user's waypoint chain. Lower = route hugs intended path more closely.
   static double _routeDeviation(
       List<LatLng> route,
       List<LatLng> waypoints,

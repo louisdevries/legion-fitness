@@ -5,6 +5,7 @@ import '../services/workout_engine_service.dart';
 import 'exercise_preview_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:legion_fitness/main.dart';
+import '../utils/user_prefs.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -43,15 +44,13 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
   }
 
   Future<void> _loadActiveProgram() async {
-    final prefs = await SharedPreferences.getInstance();
-    final activeId = prefs.getInt('active_program_id');
+    final activeId = await UserPrefs.getInt('active_program_id');
     setState(() => isActiveProgram = activeId == widget.programId);
   }
 
   Future<void> _activateProgram() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('active_program_id', widget.programId);
-    await prefs.setInt('active_week_number', selectedWeek);
+    await UserPrefs.setInt('active_program_id', widget.programId);
+    await UserPrefs.setInt('active_week_number', selectedWeek);
 
     setState(() => isActiveProgram = true);
 

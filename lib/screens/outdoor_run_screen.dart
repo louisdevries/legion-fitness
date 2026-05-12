@@ -10,12 +10,12 @@ import 'package:flutter/services.dart';
 import '../models/saved_route.dart';
 import '../services/route_service.dart';
 import '../services/location_service.dart';
+import '../services/run_service.dart';
+import '../services/geocoding_service.dart';
 import '../utils/route_utils.dart';
 import '../utils/map_gesture_handler.dart';
 import '../models/run_state.dart';
-import '../main.dart';
-import '../services/run_service.dart';
-import '../widgets/address_route_builder_sheet.dart';
+import '../widgets/tap_route_builder.dart';
 
 const String mapboxToken =
     "pk.eyJ1IjoibG91aXNkZXZyaWVzIiwiYSI6ImNtbnlsZ3d1dDAzMXgycXNlcXlyaHJrdmwifQ.bDTfupr74bI5qnK7VCgBHg";
@@ -32,7 +32,6 @@ class OutdoorRunScreen extends StatefulWidget {
 class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
   final MapController _mapController = MapController();
   final GlobalKey _mapKey = GlobalKey();
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   StreamSubscription<LatLng>? _positionStream;
   Timer? _timer;
@@ -41,14 +40,20 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
 
   late RunState _state;
 
+  // Lock mode (during runs)
   bool _isLocked = false;
-  bool _panInsteadOfDraw = false;
   double _unlockProgress = 0.0;
 
-  // Address builder controller — lives across the screen lifecycle.
-  AddressBuilderController? _addressController;
-  PersistentBottomSheetController? _addressSheetController;
-  bool _addressSheetOpen = false;
+  // Drawing mode sub-state — when true, finger pans the map instead of drawing
+  bool _panInsteadOfDraw = false;
+
+  // ── Tap-to-build route mode ────────────────────────────────────────
+  bool _isBuildingByTap = false;
+  final List<LatLng> _buildPins = [];
+  List<LatLng> _buildPreviewRoute = [];
+  double _buildPreviewKm = 0;
+  bool _buildIsRouting = false;
+  Timer? _buildRouteDebounce;
 
   @override
   void initState() {
@@ -63,7 +68,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
     _timer?.cancel();
     _positionStream?.cancel();
     LocationService.stopBackgroundMode();
-    _addressController?.dispose();
+    _buildRouteDebounce?.cancel();
     super.dispose();
   }
 
@@ -89,9 +94,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
   // ==================== LOCK ====================
 
   void _toggleLock() {
-    setState(() {
-      _isLocked = !_isLocked;
-    });
+    setState(() => _isLocked = !_isLocked);
   }
 
   // ==================== RUN CONTROLS ====================
@@ -526,66 +529,132 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
     );
   }
 
-  // ==================== ADDRESS-BASED ROUTE BUILDER ====================
+  // ==================== TAP-TO-BUILD ROUTE MODE ====================
 
-  void _openAddressBuilder() {
+  void _enterTapBuildMode() {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
-      _showSnackBar("You must be signed in to save routes");
+      _showSnackBar('You must be signed in to save routes');
       return;
     }
-    if (_addressSheetOpen) return; // already open
-
-    _addressController?.dispose();
-    _addressController = AddressBuilderController();
-    setState(() => _addressSheetOpen = true);
-
-    // 🆕 Use Scaffold.showBottomSheet (non-modal) so the map behind is
-    // still tappable. Modal sheets have a barrier that intercepts taps.
-    _addressSheetController = _scaffoldKey.currentState!.showBottomSheet(
-          (ctx) {
-        return AddressRouteBuilderSheet(
-          controller: _addressController!,
-          userLocation: _state.currentPosition,
-          onClose: () {
-            _addressSheetController?.close();
-          },
-          onRouteBuilt: (built) async {
-            final name = await _promptForRouteName(
-              initial: built.summary.length > 60
-                  ? built.summary.substring(0, 60)
-                  : built.summary,
-            );
-            if (name == null || name.isEmpty) return;
-            await _persistRoute(
-              userId: user.id,
-              name: name,
-              points: built.points,
-              distanceMeters: built.distanceMeters,
-              exitDrawing: false,
-            );
-            _addressSheetController?.close();
-          },
-        );
-      },
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      enableDrag: false,
-    );
-
-    _addressSheetController!.closed.whenComplete(() {
-      if (mounted) {
-        setState(() => _addressSheetOpen = false);
-      }
+    setState(() {
+      _isBuildingByTap = true;
+      _buildPins.clear();
+      _buildPreviewRoute = [];
+      _buildPreviewKm = 0;
+      _buildIsRouting = false;
+      _state = _state.copyWith(
+        isDrawing: false,
+        clearSelectedRoute: true,
+        routePoints: [],
+        rawDrawnPoints: [],
+        plannedRoute: [],
+      );
     });
   }
 
-  // Called by the FlutterMap when the user taps. Only forwards the tap when
-  // the address sheet is in pin-pick mode.
+  void _exitTapBuildMode() {
+    _buildRouteDebounce?.cancel();
+    setState(() {
+      _isBuildingByTap = false;
+      _buildPins.clear();
+      _buildPreviewRoute = [];
+      _buildPreviewKm = 0;
+      _buildIsRouting = false;
+    });
+  }
+
+  void _addBuildPin(LatLng point) {
+    setState(() => _buildPins.add(point));
+    _scheduleBuildRouteRefresh();
+  }
+
+  void _removeBuildPin(int index) {
+    if (index < 0 || index >= _buildPins.length) return;
+    setState(() => _buildPins.removeAt(index));
+    _scheduleBuildRouteRefresh();
+  }
+
+  void _undoBuildPin() {
+    if (_buildPins.isEmpty) return;
+    setState(() => _buildPins.removeLast());
+    _scheduleBuildRouteRefresh();
+  }
+
+  void _clearBuildPins() {
+    setState(() {
+      _buildPins.clear();
+      _buildPreviewRoute = [];
+      _buildPreviewKm = 0;
+    });
+    _buildRouteDebounce?.cancel();
+  }
+
+  /// Debounce route refresh — when the user taps several pins quickly,
+  /// only fire OSRM once after they stop.
+  void _scheduleBuildRouteRefresh() {
+    _buildRouteDebounce?.cancel();
+    if (_buildPins.length < 2) {
+      setState(() {
+        _buildPreviewRoute = [];
+        _buildPreviewKm = 0;
+      });
+      return;
+    }
+    setState(() => _buildIsRouting = true);
+    _buildRouteDebounce = Timer(const Duration(milliseconds: 400), () async {
+      final pins = List<LatLng>.from(_buildPins);
+      final routed = await GeocodingService.routeThroughWaypoints(pins);
+      if (!mounted) return;
+      double meters = 0;
+      for (int i = 0; i < routed.length - 1; i++) {
+        meters += const Distance().as(
+          LengthUnit.Meter,
+          routed[i],
+          routed[i + 1],
+        );
+      }
+      setState(() {
+        _buildPreviewRoute = routed;
+        _buildPreviewKm = meters / 1000.0;
+        _buildIsRouting = false;
+      });
+    });
+  }
+
+  Future<void> _saveBuiltRoute() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+    if (_buildPreviewRoute.isEmpty) {
+      _showSnackBar('Add at least 2 pins first');
+      return;
+    }
+
+    // Reverse-geocode pins in parallel for a nice default name.
+    final names = await GeocodingService.reverseGeocodeBatch(_buildPins);
+    final summary = names.map((n) => n.shortName).join(' → ');
+
+    if (!mounted) return;
+    final name = await _promptForRouteName(
+      initial: summary.length > 60 ? summary.substring(0, 60) : summary,
+    );
+    if (name == null || name.isEmpty) return;
+
+    await _persistRoute(
+      userId: user.id,
+      name: name,
+      points: _buildPreviewRoute,
+      distanceMeters: _buildPreviewKm * 1000,
+      exitDrawing: false,
+    );
+    _exitTapBuildMode();
+  }
+
+  // ==================== MAP TAP HANDLER ====================
+
   void _handleMapTap(TapPosition tapPos, LatLng latlng) {
-    final ctrl = _addressController;
-    if (ctrl != null && ctrl.awaitingPin.value) {
-      ctrl.deliverPick(latlng);
+    if (_isBuildingByTap) {
+      _addBuildPin(latlng);
     }
   }
 
@@ -616,19 +685,35 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
     return WillPopScope(
       onWillPop: () async => !_isLocked,
       child: Scaffold(
-        key: _scaffoldKey,
         appBar: _buildAppBar(),
         body: Stack(
           children: [
             Column(
               children: [
-                if (_buildInfoBanner() != null) _buildInfoBanner()!,
+                if (!_isBuildingByTap && _buildInfoBanner() != null)
+                  _buildInfoBanner()!,
                 Expanded(child: _buildMap()),
-                _buildStatsBar(),
-                _buildControls(),
+                if (!_isBuildingByTap) _buildStatsBar(),
+                if (!_isBuildingByTap) _buildControls(),
               ],
             ),
             if (_isLocked) _buildLockOverlay(),
+            if (_isBuildingByTap)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: TapRouteBuilderPanel(
+                  pinCount: _buildPins.length,
+                  routeKm: _buildPreviewKm,
+                  isRouting: _buildIsRouting,
+                  canSave: _buildPreviewRoute.length >= 2,
+                  onUndo: _undoBuildPin,
+                  onClear: _clearBuildPins,
+                  onCancel: _exitTapBuildMode,
+                  onSave: _saveBuiltRoute,
+                ),
+              ),
           ],
         ),
       ),
@@ -639,23 +724,23 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
     return AppBar(
       title: const Text("Outdoor Run"),
       actions: [
-        if (!_state.isRunning)
+        if (!_state.isRunning && !_isBuildingByTap)
           IconButton(
             tooltip: "My routes",
             icon: const Icon(Icons.route),
             onPressed: _openRoutesSheet,
           ),
-        if (!_state.isRunning)
+        if (!_state.isRunning && !_isBuildingByTap)
           IconButton(
-            tooltip: "Build by address",
-            icon: const Icon(Icons.alt_route),
-            onPressed: _openAddressBuilder,
+            tooltip: "Build by tapping the map",
+            icon: const Icon(Icons.add_location_alt_outlined),
+            onPressed: _enterTapBuildMode,
           ),
         IconButton(
           icon: Icon(_isLocked ? Icons.lock : Icons.lock_open),
           onPressed: _toggleLock,
         ),
-        if (!_state.isRunning)
+        if (!_state.isRunning && !_isBuildingByTap)
           IconButton(
             tooltip: _state.isDrawing ? "Done" : "Draw a route",
             icon: Icon(_state.isDrawing ? Icons.check : Icons.edit),
@@ -758,10 +843,12 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                 "https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token=$mapboxToken",
                 tileSize: 512,
                 zoomOffset: -1,
-                tileProvider: NetworkTileProvider(), // optional — this is the default
               ),
+
+              // Ghost route (selected saved route)
               if (_state.selectedRoute != null &&
-                  _state.selectedRoute!.points.isNotEmpty)
+                  _state.selectedRoute!.points.isNotEmpty &&
+                  !_isBuildingByTap)
                 PolylineLayer(
                   polylines: [
                     Polyline(
@@ -773,6 +860,8 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                     ),
                   ],
                 ),
+
+              // Live run path
               if (_state.isRunning && _state.actualRunPath.isNotEmpty)
                 PolylineLayer(
                   polylines: [
@@ -783,8 +872,11 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                     ),
                   ],
                 ),
+
+              // Drawn preview (only when no saved route is selected and not building)
               if (_state.selectedRoute == null &&
-                  _state.routePoints.isNotEmpty)
+                  _state.routePoints.isNotEmpty &&
+                  !_isBuildingByTap)
                 PolylineLayer(
                   polylines: [
                     Polyline(
@@ -794,6 +886,49 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                     ),
                   ],
                 ),
+
+              // Build mode: routed preview line
+              if (_isBuildingByTap && _buildPreviewRoute.isNotEmpty)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: _buildPreviewRoute,
+                      strokeWidth: 5,
+                      color: Colors.blue.withValues(alpha: 0.85),
+                      borderStrokeWidth: 2,
+                      borderColor: Colors.white.withValues(alpha: 0.6),
+                    ),
+                  ],
+                ),
+
+              // Build mode: pin markers
+              if (_isBuildingByTap && _buildPins.isNotEmpty)
+                MarkerLayer(
+                  markers: [
+                    for (int i = 0; i < _buildPins.length; i++)
+                      Marker(
+                        point: _buildPins[i],
+                        width: 48,
+                        height: 48,
+                        alignment: Alignment.topCenter,
+                        child: WaypointPin(
+                          label: i == 0
+                              ? 'A'
+                              : i == _buildPins.length - 1
+                              ? 'B'
+                              : '$i',
+                          color: i == 0
+                              ? Colors.green
+                              : i == _buildPins.length - 1
+                              ? Colors.red
+                              : Colors.blue,
+                          onRemove: () => _removeBuildPin(i),
+                        ),
+                      ),
+                  ],
+                ),
+
+              // User position marker
               MarkerLayer(
                 markers: [
                   Marker(
@@ -808,6 +943,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
           ),
         ),
 
+        // Floating draw/pan toggle while drawing
         if (_state.isDrawing && !_isLocked)
           Positioned(
             top: 12,
@@ -830,24 +966,6 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                 ),
               ),
             ),
-          ),
-
-        // Crosshair shown when waiting for a pin tap.
-        if (_addressSheetOpen && _addressController != null)
-          ValueListenableBuilder<bool>(
-            valueListenable: _addressController!.awaitingPin,
-            builder: (ctx, awaiting, _) {
-              if (!awaiting) return const SizedBox.shrink();
-              return const IgnorePointer(
-                child: Center(
-                  child: Icon(
-                    Icons.add,
-                    size: 40,
-                    color: Colors.blue,
-                  ),
-                ),
-              );
-            },
           ),
       ],
     );
@@ -1045,7 +1163,7 @@ class _RoutesSheet extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 32),
               child: Text(
-                "No saved routes yet.\nTap the pencil to draw one, or the alt-route icon to build one by address.",
+                "No saved routes yet.\nDraw one with the pencil, or build one by tapping the map.",
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey),
               ),

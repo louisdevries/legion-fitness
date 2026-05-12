@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -64,6 +65,13 @@ class AuthService {
   /// Logout
   static Future<void> logout() async {
     await supabase.auth.signOut();
+    final prefs = await SharedPreferences.getInstance();
+    // In-progress workout: never makes sense to keep across users.
+    await prefs.remove('active_session');
+    // Clean up legacy non-namespaced keys so guests don't inherit them.
+    // (Safe to remove these lines after every user has logged in once.)
+    await prefs.remove('active_program_id');
+    await prefs.remove('active_week_number');
   }
 
   /// Current logged-in user

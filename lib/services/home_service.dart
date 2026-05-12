@@ -2,13 +2,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/home_state.dart';
 import 'dart:developer' as developer;
+import '../utils/user_prefs.dart';
 
 class HomeService {
   final supabase = Supabase.instance.client;
 
   Future<HomeState> loadHomeData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final programId = prefs.getInt('active_program_id');
+    final programId = await UserPrefs.getInt('active_program_id');
 
     if (programId == null) {
       return HomeState(isLoading: false);
@@ -17,8 +17,7 @@ class HomeService {
     final programInfo = await _loadProgramInfo(programId);
     final progressData = await _loadProgress(programId);
 
-    await prefs.setInt('active_week_number', progressData.currentWeek);
-
+    await UserPrefs.setInt('active_week_number', progressData.currentWeek);
     return HomeState(
       programId: programId,
       currentWeek: progressData.currentWeek,
