@@ -13,6 +13,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'exercise_runner_screen.dart';
 import 'dart:convert';
+import '../services/achievement_service.dart';
+import 'achievements_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,7 +27,9 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   final _homeService = HomeService();
   final _exerciseGenerator = ExerciseGenerator();
+  List<AchievementRow> _recentUnlocks = [];
 
+  StreamSubscription<AuthState>? _authSub;
   late HomeState _state;
   late AnimationController _pulseController;
 
@@ -38,7 +42,6 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _state = HomeState();
-    _loadHomeData();
 
     _pulseController = AnimationController(
       vsync: this,
@@ -46,10 +49,23 @@ class _HomeScreenState extends State<HomeScreen>
     )..repeat(reverse: true);
 
     _initHealth();
+
+    _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((event) {
+      if (mounted) {
+        _loadHomeData();
+        _loadRecentUnlocks();
+      }
+    });
+
+    _loadHomeData();
+    _loadRecentUnlocks();
   }
+
+
 
   @override
   void dispose() {
+    _authSub?.cancel();
     _pulseController.dispose();
     super.dispose();
   }
@@ -58,6 +74,24 @@ class _HomeScreenState extends State<HomeScreen>
     final newState = await _homeService.loadHomeData();
     if (mounted) {
       setState(() => _state = newState);
+    }
+  }
+
+  Future<void> _loadRecentUnlocks() async {
+    try {
+      final all = await AchievementService.fetchAll();
+      final cutoff = DateTime.now().subtract(const Duration(days: 7));
+      final recent = all
+          .where((a) =>
+      a.isUnlocked &&
+          a.unlockedAt != null &&
+          a.unlockedAt!.isAfter(cutoff))
+          .toList()
+        ..sort((a, b) => b.unlockedAt!.compareTo(a.unlockedAt!));
+      if (!mounted) return;
+      setState(() => _recentUnlocks = recent.take(2).toList());
+    } catch (_) {
+      // Silent failure — the card just won't show.
     }
   }
 
@@ -109,6 +143,7 @@ class _HomeScreenState extends State<HomeScreen>
       if (mounted) setState(() => _steps = steps);
 
       // ✅ Save to Supabase
+      // ✅ Save to Supabase
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {
         await Supabase.instance.client.from('daily_steps').upsert({
@@ -116,6 +151,19 @@ class _HomeScreenState extends State<HomeScreen>
           'date': DateTime(now.year, now.month, now.day).toIso8601String().substring(0, 10),
           'steps': steps,
         }, onConflict: 'user_id,date');
+
+        // ── Achievement progress ──────────────────────────────────
+        final unlocked = await AchievementService.onStepsLogged(
+          stepsToday: steps,
+        );
+        if (mounted && unlocked.isNotEmpty) {
+          _loadRecentUnlocks();
+          for (final a in unlocked) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('🏆 Unlocked: ${a.label}')),
+            );
+          }
+        }
       }
     } catch (e) {
       debugPrint('Failed to fetch steps: $e');
@@ -252,7 +300,11 @@ class _HomeScreenState extends State<HomeScreen>
           const SizedBox(height: 24),
           _buildWeeklyProgressCard(),
           const SizedBox(height: 16),
-          _buildStepCounterCard(), // 👈 NEW (cleanly added)
+          _buildStepCounterCard(),
+          if (_recentUnlocks.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _buildRecentUnlocksCard(),
+          ],
           const SizedBox(height: 32),
 
           // Custom Programs
@@ -582,6 +634,98 @@ class _HomeScreenState extends State<HomeScreen>
           const SizedBox(width: 16),
           Expanded(child: Text(title)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRecentUnlocksCard() {
+    if (_recentUnlocks.isEmpty) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const AchievementsScreen()),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: theme.colorScheme.primary.withValues(alpha: 0.3),
+            width: 1.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.emoji_events, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                const Text(
+                  "Recent Unlocks",
+                  style:
+                  TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const Spacer(),
+                Text(
+                  "View all",
+                  style: TextStyle(
+                    color: theme.colorScheme.primary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.chevron_right,
+                  size: 16,
+                  color: theme.colorScheme.primary,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ..._recentUnlocks.map((a) => Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary
+                          .withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.workspace_premium,
+                      size: 18,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      a.label,
+                      style:
+                      const TextStyle(fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            )),
+          ],
+        ),
       ),
     );
   }

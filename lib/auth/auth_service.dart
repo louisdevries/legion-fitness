@@ -1,13 +1,15 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+
 final supabase = Supabase.instance.client;
 
 class AuthService {
+  static const String registerNeedsConfirmation = '__needs_email_confirmation__';
   /// Register new user using Supabase Auth
   static Future<String?> register(String name, String email, String password) async {
     try {
-      // 1️⃣ Create auth user
+      // 1️⃣ Create the auth user.
       final signUpRes = await supabase.auth.signUp(
         email: email,
         password: password,
@@ -17,27 +19,47 @@ class AuthService {
         return "Failed to create account";
       }
 
-      // 2️⃣ IMPORTANT: Sign in immediately to get a session
-      final loginRes = await supabase.auth.signInWithPassword(
-        email: email,
-        password: password,
-      );
+      // 2️⃣ Try to sign in immediately. With email confirmation enabled,
+      // this will throw 'email_not_confirmed' — that's not a failure,
+      // it just means the user needs to verify their email.
+      try {
+        final loginRes = await supabase.auth.signInWithPassword(
+          email: email,
+          password: password,
+        );
 
-      if (loginRes.session == null) {
-        return "Account created but login failed";
+        if (loginRes.session == null) {
+          // Sign-in didn't error but also didn't produce a session.
+          // Probably email confirmation is required.
+          return registerNeedsConfirmation;
+        }
+      } on AuthApiException catch (e) {
+        if (e.code == 'email_not_confirmed') {
+          // Account was created, but sign-in is gated on email
+          // confirmation. The user can verify their email and log in
+          // normally afterwards. We can't create their row in `users`
+          // here because RLS needs an authenticated session — that'll
+          // have to happen on first login instead.
+          return registerNeedsConfirmation;
+        }
+        // Any other auth error is a real failure.
+        return e.message;
       }
 
-      final user = loginRes.user!;
-
-      // 3️⃣ Now we ARE authenticated → RLS allows insert
-      await supabase.from('users').insert({
-        'id': user.id,
-        'email': email,
-        'name': name,
-        'username': email.split('@')[0],
-        'is_paid_user': false,
-        'is_admin': false,
-      });
+      // 3️⃣ We're authenticated → create the users row.
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        // upsert so re-running this after a manual confirm doesn't
+        // duplicate-key on the existing auth.uid().
+        await supabase.from('users').upsert({
+          'id': user.id,
+          'email': email,
+          'name': name,
+          'username': email.split('@')[0],
+          'is_paid_user': false,
+          'is_admin': false,
+        });
+      }
 
       return null;
     } catch (e) {

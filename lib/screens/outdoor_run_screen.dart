@@ -16,6 +16,7 @@ import '../utils/route_utils.dart';
 import '../utils/map_gesture_handler.dart';
 import '../models/run_state.dart';
 import '../widgets/tap_route_builder.dart';
+import '../services/achievement_service.dart';
 
 const String mapboxToken =
     "pk.eyJ1IjoibG91aXNkZXZyaWVzIiwiYSI6ImNtbnlsZ3d1dDAzMXgycXNlcXlyaHJrdmwifQ.bDTfupr74bI5qnK7VCgBHg";
@@ -195,6 +196,15 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
             route: _state.actualRunPath,
             routeId: attemptedRouteId,
           );
+
+          final unlocked = await AchievementService.onRunCompleted(
+            distanceMeters: _state.totalDistanceMeters,
+          );
+          if (mounted) {
+            for (final a in unlocked) {
+              _showSnackBar('🏆 Unlocked: ${a.label}');
+            }
+          }
 
           if (attemptedRouteId != null) {
             if (priorBest == null) {

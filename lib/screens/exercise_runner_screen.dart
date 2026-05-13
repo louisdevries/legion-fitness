@@ -16,6 +16,7 @@ import '../services/sync_service.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:legion_fitness/models/exercise_set_result.dart';
+import '../services/achievement_service.dart';
 
 class ExerciseRunnerScreen extends StatefulWidget {
   final List<Map<String, dynamic>> exercises;
@@ -314,6 +315,24 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     }
   }
 
+  void _maybeShowUnlocks(List<UnlockedAchievement> unlocked) {
+    if (!mounted || unlocked.isEmpty) return;
+    for (final a in unlocked) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.emoji_events, color: Colors.amber),
+              const SizedBox(width: 8),
+              Expanded(child: Text('🏆 Unlocked: ${a.label}')),
+            ],
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
   // ── Session persistence ──────────────────────────────────────────
   Future<void> _saveState() async {
     final prefs = await SharedPreferences.getInstance();
@@ -580,7 +599,17 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
         setIndex: setIndexToLog,
         repsCompleted: repsLogged,
       );
+
+      // ── Achievement progress ───────────────────────────────────
+      final unlocked = await AchievementService.onSetLogged(
+        exerciseId: exerciseIdToLog,
+        reps: repsLogged,
+      );
+      _maybeShowUnlocks(unlocked);
+
     }
+
+
 
     // ── Each-side flow ───────────────────────────────────────────
     // After the FIRST side, switch to the second — no rest.
@@ -678,6 +707,8 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
 
   // ── Workout complete ─────────────────────────────────────────────
   Future<void> _showWorkoutComplete() async {
+    final streakUnlocks = await AchievementService.onWorkoutCompleted();
+    _maybeShowUnlocks(streakUnlocks);
     SyncService.trySync();
     await _clearState();
     await showDialog(

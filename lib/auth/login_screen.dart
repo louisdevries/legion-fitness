@@ -40,17 +40,36 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!mounted) return;
 
-    setState(() {
-      isLoading = false;
-      errorMessage = error;
-    });
+    setState(() => isLoading = false);
 
     if (error == null) {
-      // ✅ POP the login screen so AuthGate rebuilds automatically
+      // Logged-in successfully.
       if (Navigator.canPop(context)) {
         Navigator.pop(context);
       }
+      return;
     }
+
+    if (error == AuthService.registerNeedsConfirmation) {
+      // Account was created but needs email verification before login.
+      // Flip back to the login form and show a confirmation message.
+      setState(() {
+        isLogin = true;
+        errorMessage = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Account created! Check your email to confirm, then sign in.',
+          ),
+          duration: Duration(seconds: 5),
+        ),
+      );
+      return;
+    }
+
+    // Any other error: show it.
+    setState(() => errorMessage = error);
   }
 
   @override

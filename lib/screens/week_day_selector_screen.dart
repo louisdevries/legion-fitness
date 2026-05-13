@@ -60,6 +60,123 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
     );
   }
 
+  Future<void> _showAllExercises() async {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) => Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[400],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text(
+                  'Program Exercises',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              const Divider(),
+              Expanded(
+                child: FutureBuilder<List<Map<String, dynamic>>>(
+                  future: _fetchAllProgramExercises(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return Center(child: Text('Error: ${snapshot.error}'));
+                    }
+                    final exercises = snapshot.data ?? [];
+                    if (exercises.isEmpty) {
+                      return const Center(child: Text('No exercises found'));
+                    }
+                    return ListView.builder(
+                      controller: scrollController,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: exercises.length,
+                      itemBuilder: (context, index) {
+                        final exercise = exercises[index];
+                        final mediaUrl = exercise['media_url'] as String?;
+                        final name = exercise['name'] as String? ?? 'Unknown';
+
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: ListTile(
+                            leading: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: mediaUrl != null && mediaUrl.isNotEmpty
+                                  ? Image.network(
+                                      mediaUrl,
+                                      width: 60,
+                                      height: 60,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => Container(
+                                        width: 60,
+                                        height: 60,
+                                        color: Colors.grey[300],
+                                        child: const Icon(Icons.fitness_center),
+                                      ),
+                                    )
+                                  : Container(
+                                      width: 60,
+                                      height: 60,
+                                      color: Colors.grey[300],
+                                      child: const Icon(Icons.fitness_center),
+                                    ),
+                            ),
+                            title: Text(name),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchAllProgramExercises() async {
+    final programExercises = await supabase
+        .from('program_exercises')
+        .select('exercise_id')
+        .eq('program_id', widget.programId);
+
+    final exerciseIds = (programExercises as List)
+        .map((e) => e['exercise_id'] as int)
+        .toSet()
+        .toList();
+
+    if (exerciseIds.isEmpty) return [];
+
+    final exercises = await supabase
+        .from('exercises')
+        .select('id, name, media_url')
+        .inFilter('id', exerciseIds);
+
+    return List<Map<String, dynamic>>.from(exercises);
+  }
+
   Future<void> loadProgramStructure() async {
     try {
       final program = await supabase
@@ -262,13 +379,25 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
             padding: const EdgeInsets.all(16),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                ElevatedButton.icon(
-                  icon: Icon(isActiveProgram
-                      ? Icons.check_circle
-                      : Icons.play_arrow),
-                  label: Text(
-                      isActiveProgram ? 'Program Active' : 'Start Program'),
-                  onPressed: isActiveProgram ? null : _activateProgram,
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        icon: Icon(isActiveProgram
+                            ? Icons.check_circle
+                            : Icons.play_arrow),
+                        label: Text(
+                            isActiveProgram ? 'Program Active' : 'Start Program'),
+                        onPressed: isActiveProgram ? null : _activateProgram,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.list_alt),
+                      label: const Text('Exercises'),
+                      onPressed: _showAllExercises,
+                    ),
+                  ],
                 ),
 
                 const SizedBox(height: 24),

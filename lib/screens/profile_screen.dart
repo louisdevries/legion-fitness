@@ -6,6 +6,7 @@ import '../screens/health_profile_screen.dart';
 import '../screens/premium_program_screen.dart';
 import '../screens/workout_reminder_screen.dart';   // ← new import
 import 'rest_timer_settings_screen.dart';
+import 'achievements_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -72,6 +73,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
             title: "Change Password",
             onTap: () {
               // TODO: Password reset
+            },
+          ),
+
+          _buildSectionHeader("Progress"),
+          _buildTile(
+            icon: Icons.emoji_events,
+            title: "Achievements",
+            subtitle: "View your unlocked milestones",
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AchievementsScreen(),
+                ),
+              );
             },
           ),
 
