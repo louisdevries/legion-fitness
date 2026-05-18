@@ -242,6 +242,51 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
 
               const SizedBox(height: 24),
 
+              // ================= CURRENT WEIGHT =================
+              if (latestWeightKg != null)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.monitor_weight_outlined,
+                          size: 20,
+                          color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Current Weight',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.6),
+                            ),
+                          ),
+                          Text(
+                            weightUnit == 'lbs'
+                                ? '${(latestWeightKg! * 2.20462).toStringAsFixed(1)} lbs'
+                                : '${latestWeightKg!.toStringAsFixed(1)} kg',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+              const SizedBox(height: 16),
+
               // ================= NEW WEIGHT =================
               TextFormField(
                 controller: newWeightController,

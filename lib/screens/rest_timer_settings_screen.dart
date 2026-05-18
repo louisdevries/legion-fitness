@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/settings_service.dart';
+import '../main.dart';
 
 class RestTimerSettingsScreen extends StatefulWidget {
   const RestTimerSettingsScreen({super.key});
@@ -11,6 +12,7 @@ class RestTimerSettingsScreen extends StatefulWidget {
 
 class _RestTimerSettingsScreenState extends State<RestTimerSettingsScreen> {
   int restSeconds = 60;
+  bool _mute = false;
 
   @override
   void initState() {
@@ -20,7 +22,9 @@ class _RestTimerSettingsScreenState extends State<RestTimerSettingsScreen> {
 
   Future<void> _load() async {
     restSeconds = await SettingsService.getRestSeconds();
-    setState(() {});
+    setState(() {
+      _mute = AppSettings.muteTimerSounds.value;
+    });
   }
 
   @override
@@ -53,9 +57,19 @@ class _RestTimerSettingsScreenState extends State<RestTimerSettingsScreen> {
 
             const SizedBox(height: 24),
 
+            SwitchListTile(
+              title: const Text('Mute timer sounds'),
+              subtitle: const Text('Silence tick and completion sounds during workouts'),
+              value: _mute,
+              onChanged: (v) => setState(() => _mute = v),
+            ),
+
+            const SizedBox(height: 24),
+
             ElevatedButton(
               onPressed: () async {
                 await SettingsService.setRestSeconds(restSeconds);
+                await AppSettings.setMuteTimerSounds(_mute);
                 if (!mounted) return;
                 Navigator.pop(context);
               },

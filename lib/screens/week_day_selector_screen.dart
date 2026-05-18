@@ -60,6 +60,18 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
     );
   }
 
+  Future<void> _deactivateProgram() async {
+    await UserPrefs.remove('active_program_id');
+    await UserPrefs.remove('active_week_number');
+
+    setState(() => isActiveProgram = false);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Program deactivated')),
+    );
+  }
+
   Future<void> _showAllExercises() async {
     showModalBottomSheet(
       context: context,
@@ -197,58 +209,69 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
             .eq('program_id', widget.programId),
       );
 
-      final userId = supabase.auth.currentUser!.id;
+      final userId = supabase.auth.currentUser?.id;
 
-      // -----------------------------
-      // STEP 1: REQUIRED EXERCISES PER DAY
-      // Each exercise counts as 1 unit — a day is done when all
-      // exercises have at least one completion logged.
-      // -----------------------------
-      final programExercises = await supabase
-          .from('program_exercises')
-          .select('week_number, day_number, exercise_id')
-          .eq('program_id', widget.programId);
-
-      // Count how many distinct exercises exist per day
-      final Map<String, Set<int>> requiredExercisesByDay = {};
-      for (final pe in programExercises) {
-        final key = '${pe['week_number']}-${pe['day_number']}';
-        requiredExercisesByDay.putIfAbsent(key, () => <int>{});
-        requiredExercisesByDay[key]!.add(pe['exercise_id'] as int);
-      }
-
-      // -----------------------------
-      // STEP 2: COMPLETED EXERCISES PER DAY
-      // From exercise_completions — deduplicate by exercise_id
-      // so multiple sets don't inflate the count.
-      // -----------------------------
-      final completionLogs = await supabase
-          .from('exercise_completions')
-          .select('week_number, day_number, exercise_id')
-          .eq('program_id', widget.programId)
-          .eq('user_id', userId);
-
-      final Map<String, Set<int>> completedExercisesByDay = {};
-      for (final log in completionLogs) {
-        final key = '${log['week_number']}-${log['day_number']}';
-        completedExercisesByDay.putIfAbsent(key, () => <int>{});
-        completedExercisesByDay[key]!.add(log['exercise_id'] as int);
-      }
-
-      // -----------------------------
-      // STEP 3: MARK DAY COMPLETE WHEN ALL EXERCISES DONE
-      // -----------------------------
       completedDaysByWeek.clear();
 
-      requiredExercisesByDay.forEach((key, required) {
-      final completed = completedExercisesByDay[key] ?? <int>{};
-      if (completed.length >= required.length) {
-      final parts = key.split('-');
-      final week = int.parse(parts[0]);
-      final day = int.parse(parts[1]);
-      completedDaysByWeek.putIfAbsent(week, () => {}).add(day);
+      if (userId != null) {
+        // -----------------------------
+        // STEP 1: REQUIRED EXERCISES PER DAY
+        // -----------------------------
+        final programExercises = await supabase
+            .from('program_exercises')
+            .select('week_number, day_number, exercise_id')
+            .eq('program_id', widget.programId);
+
+        final Map<String, Set<int>> requiredExercisesByDay = {};
+        for (final pe in programExercises) {
+          final key = '${pe['week_number']}-${pe['day_number']}';
+          requiredExercisesByDay.putIfAbsent(key, () => <int>{});
+          requiredExercisesByDay[key]!.add(pe['exercise_id'] as int);
+        }
+
+        // -----------------------------
+        // STEP 2: COMPLETED EXERCISES PER DAY
+        // -----------------------------
+        final completionLogs = await supabase
+            .from('exercise_completions')
+            .select('week_number, day_number, exercise_id')
+            .eq('program_id', widget.programId)
+            .eq('user_id', userId);
+
+        final Map<String, Set<int>> completedExercisesByDay = {};
+        for (final log in completionLogs) {
+          final key = '${log['week_number']}-${log['day_number']}';
+          completedExercisesByDay.putIfAbsent(key, () => <int>{});
+          completedExercisesByDay[key]!.add(log['exercise_id'] as int);
+        }
+
+        // -----------------------------
+        // STEP 3: MARK DAY COMPLETE WHEN ALL EXERCISES DONE
+        // -----------------------------
+        requiredExercisesByDay.forEach((key, required) {
+          final completed = completedExercisesByDay[key] ?? <int>{};
+          if (completed.length >= required.length) {
+            final parts = key.split('-');
+            final week = int.parse(parts[0]);
+            final day = int.parse(parts[1]);
+            completedDaysByWeek.putIfAbsent(week, () => {}).add(day);
+          }
+        });
+
+        final week1Entries = requiredExercisesByDay.entries
+            .where((e) => e.key.startsWith('1-'))
+            .toList();
+        for (int week = 2; week <= totalWeeks; week++) {
+          for (final entry in week1Entries) {
+            final day = int.parse(entry.key.split('-')[1]);
+            final key = '$week-$day';
+            final completed = completedExercisesByDay[key] ?? <int>{};
+            if (completed.length >= entry.value.length) {
+              completedDaysByWeek.putIfAbsent(week, () => {}).add(day);
+            }
+          }
+        }
       }
-      });
 
       highestUnlockedWeek = _computeHighestUnlockedWeek(totalWeeks);
       selectedWeek = 1;
@@ -268,23 +291,25 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
   }
 
   int _computeHighestUnlockedWeek(int totalWeeks) {
+    // Always use week 1's day structure as reference, because weeks 2+ are
+    // generated and have no rows in program_exercises. Without this, empty
+    // weekDays.every(...) would be vacuously true and unlock all weeks.
+    final week1Days = rows
+        .where((r) => r['week_number'] == 1)
+        .map((r) => r['day_number'] as int)
+        .toSet();
+
+    if (week1Days.isEmpty) return 1;
+
     int unlocked = 1;
-
     for (int week = 1; week <= totalWeeks; week++) {
-      final weekDays = rows
-          .where((r) => r['week_number'] == week)
-          .map((r) => r['day_number'] as int)
-          .toSet();
-
       final completed = completedDaysByWeek[week] ?? {};
-
-      if (weekDays.every(completed.contains)) {
+      if (week1Days.every(completed.contains)) {
         unlocked = week + 1;
       } else {
         break;
       }
     }
-
     return unlocked.clamp(1, totalWeeks);
   }
 
@@ -388,7 +413,8 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                             : Icons.play_arrow),
                         label: Text(
                             isActiveProgram ? 'Program Active' : 'Start Program'),
-                        onPressed: isActiveProgram ? null : _activateProgram,
+                        onPressed:
+                            isActiveProgram ? _deactivateProgram : _activateProgram,
                       ),
                     ),
                     const SizedBox(width: 12),

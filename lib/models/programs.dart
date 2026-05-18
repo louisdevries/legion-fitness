@@ -6,6 +6,9 @@ class Program {
   final String imageUrl;
   final String description;
   final int weeks;
+  final String? userId;
+
+  bool get isPremium => userId != null;
 
   Program({
     required this.id,
@@ -15,6 +18,7 @@ class Program {
     required this.imageUrl,
     required this.description,
     required this.weeks,
+    this.userId,
   });
 
   factory Program.fromMap(Map<String, dynamic> map) {
@@ -26,6 +30,7 @@ class Program {
       imageUrl: map['image_url'] as String? ?? 'https://via.placeholder.com/150',
       description: map['description'] as String? ?? '',
       weeks: map['weeks'] as int? ?? 0,
+      userId: map['user_id'] as String?,
     );
   }
 }

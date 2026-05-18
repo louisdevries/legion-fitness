@@ -55,9 +55,16 @@ class NextExercisePreview extends StatelessWidget {
     (exercise['duration_type'] ?? 'reps').toString().toLowerCase();
     final unit = durationType.contains('second') ? 'sec' : 'reps';
 
+    final isUntilFailure = durationType.contains('failure');
     String quantity;
-    if (setQuantities is List && setQuantities.isNotEmpty) {
+    if (setQuantities is List &&
+        setQuantities.isNotEmpty &&
+        setQuantities.any((v) => (v as num).toInt() > 0)) {
+      // Concrete values present — use them (handles week 2+ progression
+      // even for until-failure exercises).
       quantity = '$sets × ${setQuantities.map((e) => e.toString()).join('/')} $unit';
+    } else if (isUntilFailure) {
+      quantity = '$sets × until failure';
     } else {
       quantity = '$sets × $minQ $unit';
     }
@@ -540,9 +547,23 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
 
       // Decide what to log and whether to ask the user.
       if (_isUntilFailure) {
-        // Until-failure: don't ask, just log a 0 with a marker. The set
-        // counts as completed; rep count is intentionally not captured.
-        repsLogged = 0;
+        // Until-failure: ask the user how many they managed.
+        // The progression engine uses this to set a concrete target
+        // for next week (previous reps + 1).
+        // Default the picker to the prescribed value if we have one
+        // from a previous week, otherwise start at 10 as a reasonable
+        // guess.
+        final prescribed = _prescribedRepsForCurrentSet > 1
+            ? _prescribedRepsForCurrentSet
+            : 10;
+        await showModalBottomSheet(
+          context: context,
+          isDismissible: false,
+          builder: (_) => _RepsPicker(
+            initialReps: prescribed,
+            onConfirm: (v) => repsLogged = v,
+          ),
+        );
       } else if (_isTimed) {
         // Timed: log the duration (already done — no picker needed).
         secondsLogged = _s.totalSeconds;
@@ -657,9 +678,11 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
   int get _totalRequiredSets {
     return exercises.fold(0, (sum, ex) {
       final sets = (ex['sets'] as int?) ?? 1;
-      // Count double if superset (primary + partner each need logging)
       final hasSuperset = ex['superset_partner'] != null;
-      return sum + (hasSuperset ? sets * 2 : sets);
+      // Each-side exercises log once per side, so count them double too
+      final isEachSide = ExerciseRunnerUtils.isEachSide(ex);
+      final multiplier = hasSuperset ? 2 : (isEachSide ? 2 : 1);
+      return sum + sets * multiplier;
     });
   }
 
@@ -735,8 +758,10 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
   Widget build(BuildContext context) {
     final coachingCues = ExerciseRunnerUtils.getCoachingCues(_activeExercise);
     final mediaUrl = ExerciseRunnerUtils.getMediaUrl(_activeExercise);
-    final quantityDisplay =
-    ExerciseRunnerUtils.getQuantityDisplay(_activeExercise);
+    final quantityDisplay = ExerciseRunnerUtils.getQuantityDisplay(
+      _activeExercise,
+      currentSet: _s.currentSet,
+    );
 
     return WillPopScope(
       onWillPop: _confirmExit,

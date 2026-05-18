@@ -17,7 +17,8 @@ import '../services/achievement_service.dart';
 import 'achievements_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback? onGoToPrograms;
+  const HomeScreen({super.key, this.onGoToPrograms});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -77,6 +78,14 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  Future<void> _onRefresh() async {
+    await Future.wait([
+      _loadHomeData(),
+      _loadRecentUnlocks(),
+      _fetchSteps(),
+    ]);
+  }
+
   Future<void> _loadRecentUnlocks() async {
     try {
       final all = await AchievementService.fetchAll();
@@ -116,7 +125,7 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     // Not granted yet — request it
-    final granted = await _health.requestAuthorization(types, permissions: permissions);
+    await _health.requestAuthorization(types, permissions: permissions);
 
     // Re-check after request since Android returns false even when granted
     final confirmedGranted = await _health.hasPermissions(types, permissions: permissions) ?? false;
@@ -283,20 +292,17 @@ class _HomeScreenState extends State<HomeScreen>
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_state.programId == null) {
-      return const Center(
-        child: Text(
-          "Select or create a program to get started 💪",
-          style: TextStyle(fontSize: 18),
-        ),
-      );
-    }
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
+    return RefreshIndicator(
+      onRefresh: _onRefresh,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        child: Column(
         children: [
-          _buildResumeWorkoutBanner(),
+          _state.programId != null &&
+                  Supabase.instance.client.auth.currentUser != null
+              ? _buildResumeWorkoutBanner()
+              : _buildChooseProgramBanner(),
           const SizedBox(height: 24),
           _buildWeeklyProgressCard(),
           const SizedBox(height: 16),
@@ -354,6 +360,7 @@ class _HomeScreenState extends State<HomeScreen>
             route: '/meal-suggestions',
           ),
         ],
+        ),
       ),
     );
   }
@@ -432,7 +439,122 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ================= YOUR ORIGINAL UI (UNCHANGED) =================
+  // ================= CHOOSE PROGRAM BANNER =================
+
+  Widget _buildChooseProgramBanner() {
+    final theme = Theme.of(context);
+
+    return GestureDetector(
+      onTap: widget.onGoToPrograms,
+      child: Container(
+        height: 220,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: LinearGradient(
+            colors: [
+              theme.colorScheme.primary.withValues(alpha: 0.85),
+              theme.colorScheme.primary.withValues(alpha: 0.5),
+            ],
+            begin: Alignment.bottomLeft,
+            end: Alignment.topRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 10,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned(
+              right: -20,
+              top: -20,
+              child: Icon(
+                Icons.fitness_center,
+                size: 160,
+                color: Colors.white.withValues(alpha: 0.07),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.add, color: Colors.white, size: 22),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Choose a Program",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              "Pick a plan and start training today",
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.8),
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              "Browse",
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold),
+                            ),
+                            SizedBox(width: 4),
+                            Icon(Icons.arrow_forward,
+                                color: Colors.white, size: 16),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ================= RESUME WORKOUT BANNER =================
 
   Widget _buildResumeWorkoutBanner() {
     final theme = Theme.of(context);
@@ -627,12 +749,58 @@ class _HomeScreenState extends State<HomeScreen>
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: premium
+              ? theme.colorScheme.primary.withValues(alpha: 0.3)
+              : theme.colorScheme.onSurface.withValues(alpha: 0.06),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(
+              alpha: theme.brightness == Brightness.dark ? 0.28 : 0.10,
+            ),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Row(
         children: [
-          Icon(icon),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: theme.colorScheme.primary.withValues(alpha: 0.12),
+            ),
+            child: Icon(icon, size: 26, color: theme.colorScheme.primary),
+          ),
           const SizedBox(width: 16),
-          Expanded(child: Text(title)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right,
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+          ),
         ],
       ),
     );

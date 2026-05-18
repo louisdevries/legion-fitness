@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../services/local_workout_service.dart';
 import '../services/sync_service.dart';
 import 'package:legion_fitness/models/pending_completion.dart';
+import 'package:legion_fitness/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
@@ -45,10 +46,12 @@ class ExerciseRunnerService {
   }
 
   Future<void> playTick() async {
+    if (AppSettings.muteTimerSounds.value) return;
     await tickPlayer.play(AssetSource('sounds/tick.wav'));
   }
 
   Future<void> playDing() async {
+    if (AppSettings.muteTimerSounds.value) return;
     await dingPlayer.play(AssetSource('sounds/ding.wav'));
   }
 

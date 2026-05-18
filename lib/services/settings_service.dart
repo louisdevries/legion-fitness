@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../main.dart';
 
 class SettingsService {
   static const _darkModeKey = 'theme_mode';
@@ -41,5 +42,6 @@ class SettingsService {
   static Future<void> setRestSeconds(int seconds) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_restSecondsKey, seconds);
+    AppSettings.restTimerSeconds.value = seconds;
   }
 }

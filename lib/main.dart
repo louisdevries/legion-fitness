@@ -20,13 +20,16 @@ import 'screens/outdoor_run_screen.dart';
 class AppSettings {
   static final themeMode = ValueNotifier<ThemeMode>(ThemeMode.system);
   static final restTimerSeconds = ValueNotifier<int>(60);
+  static final muteTimerSounds = ValueNotifier<bool>(false);
   static final globalLoading = ValueNotifier<bool>(false);
 
   static Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
 
     final theme = prefs.getString('themeMode');
-    final rest = prefs.getInt('restTimerSeconds');
+    // Use 'rest_seconds' — the key shared with SettingsService.
+    final rest = prefs.getInt('rest_seconds');
+    final mute = prefs.getBool('muteTimerSounds');
 
     if (theme != null) {
       themeMode.value = ThemeMode.values.firstWhere(
@@ -34,10 +37,8 @@ class AppSettings {
         orElse: () => ThemeMode.system,
       );
     }
-
-    if (rest != null) {
-      restTimerSeconds.value = rest;
-    }
+    if (rest != null) restTimerSeconds.value = rest;
+    if (mute != null) muteTimerSounds.value = mute;
   }
 
   static Future<void> setThemeMode(ThemeMode mode) async {
@@ -48,8 +49,14 @@ class AppSettings {
 
   static Future<void> setRestTimer(int seconds) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('restTimerSeconds', seconds);
+    await prefs.setInt('rest_seconds', seconds);
     restTimerSeconds.value = seconds;
+  }
+
+  static Future<void> setMuteTimerSounds(bool mute) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('muteTimerSounds', mute);
+    muteTimerSounds.value = mute;
   }
 
   static void showLoading() => globalLoading.value = true;
@@ -183,12 +190,13 @@ class _AuthGateState extends State<AuthGate> {
       builder: (context, snapshot) {
         final session = Supabase.instance.client.auth.currentSession;
 
-        if (!hasSeenWelcome!) {
-          return const WelcomeScreen();
-        }
-
+        // Active session always wins — don't show welcome on a new device
         if (session != null) {
           return const MainShell(isGuest: false);
+        }
+
+        if (!hasSeenWelcome!) {
+          return const WelcomeScreen();
         }
 
         return const MainShell(isGuest: true);
@@ -212,9 +220,7 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
 
-  bool _isRunMode = false; // 🔥 NEW
-
-  late final List<Widget> _screens;
+  bool _isRunMode = false;
 
   final List<String> _titles = const [
     'Home',
@@ -224,34 +230,32 @@ class _MainShellState extends State<MainShell> {
     'Profile',
   ];
 
-  @override
-  void initState() {
-    super.initState();
-    _screens = [
-      const HomeScreen(),
-      const ProgramsScreen(),
-      OutdoorRunScreen(
-        onRunModeChanged: (value) {
-          setState(() {
-            _isRunMode = value;
-          });
-        },
-      ),
-      widget.isGuest
-          ? const Center(
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Text(
-            "Sign up or log in to track your progress 📈",
-            style: TextStyle(fontSize: 18),
-            textAlign: TextAlign.center,
-          ),
+  void _goToPrograms() => setState(() => _currentIndex = 1);
+
+  List<Widget> get _screens => [
+    HomeScreen(onGoToPrograms: _goToPrograms),
+    const ProgramsScreen(),
+    OutdoorRunScreen(
+      onRunModeChanged: (value) {
+        setState(() {
+          _isRunMode = value;
+        });
+      },
+    ),
+    widget.isGuest
+        ? const Center(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Text(
+          "Sign up or log in to track your progress 📈",
+          style: TextStyle(fontSize: 18),
+          textAlign: TextAlign.center,
         ),
-      )
-          : const ProgressScreen(),
-      const ProfileScreen(),
-    ];
-  }
+      ),
+    )
+        : const ProgressScreen(),
+    const ProfileScreen(),
+  ];
 
   void _setRunMode(bool value) {
     setState(() {

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'exercise_runner_screen.dart';
+import '../main.dart';
 
 class ExercisePreviewScreen extends StatefulWidget {
   final List<Map<String, dynamic>> exercises;
@@ -137,7 +138,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
           MaterialPageRoute(
             builder: (_) => ExerciseRunnerScreen(
               exercises: _exercises,
-              restSeconds: widget.restSeconds,
+              restSeconds: AppSettings.restTimerSeconds.value,
               programId: widget.programId,
               weekNumber: widget.weekNumber,
               dayNumber: widget.dayNumber,

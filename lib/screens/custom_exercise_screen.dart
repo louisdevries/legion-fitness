@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/exercise.dart';
 import '../models/program_exercise_details.dart';
+import '../models/local_custom_program.dart';
 import '../services/exercise_service.dart';
+import '../services/local_program_service.dart';
 
 class CustomExerciseScreen extends StatefulWidget {
   const CustomExerciseScreen({super.key});
@@ -13,6 +15,10 @@ class CustomExerciseScreen extends StatefulWidget {
 class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
   List<Exercise> _allExercises = [];
   bool _loading = true;
+
+  final _nameController = TextEditingController();
+  int _weeks = 4;
+  int _daysPerWeek = 3;
 
   final Map<String, List<ProgramExerciseDetail>> exercisesByCategory = {
     'warmup': [],
@@ -30,6 +36,12 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
   void initState() {
     super.initState();
     _loadExercises();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadExercises() async {
@@ -54,20 +66,141 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'Program name',
+                hintText: 'e.g. Morning Push Day',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.edit_outlined),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildNumberPicker(
+                    label: 'Weeks',
+                    value: _weeks,
+                    min: 1,
+                    max: 16,
+                    onChanged: (v) => setState(() => _weeks = v),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildNumberPicker(
+                    label: 'Days / Week',
+                    value: _daysPerWeek,
+                    min: 1,
+                    max: 7,
+                    onChanged: (v) => setState(() => _daysPerWeek = v),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
             _buildCategory("Warm-up", "warmup"),
             _buildCategory("Main", "main"),
             _buildCategory("Cooldown", "cooldown"),
             const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _startWorkout,
-              icon: const Icon(Icons.play_arrow),
-              label: const Text("Start Workout"),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _saveProgram,
+                    icon: const Icon(Icons.save_outlined),
+                    label: const Text("Save Program"),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _startWorkout,
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text("Start Workout"),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
+              ],
             ),
+            const SizedBox(height: 16),
           ],
         ),
+      ),
+    );
+  }
+
+  // ================= PICKERS =================
+
+  Widget _buildNumberPicker({
+    required String label,
+    required int value,
+    required int min,
+    required int max,
+    required ValueChanged<int> onChanged,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.outline),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              InkWell(
+                borderRadius: BorderRadius.circular(4),
+                onTap: value > min ? () => onChanged(value - 1) : null,
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(Icons.remove,
+                      size: 18,
+                      color: value > min
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.outline),
+                ),
+              ),
+              SizedBox(
+                width: 36,
+                child: Text(
+                  '$value',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+              ),
+              InkWell(
+                borderRadius: BorderRadius.circular(4),
+                onTap: value < max ? () => onChanged(value + 1) : null,
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(Icons.add,
+                      size: 18,
+                      color: value < max
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.outline),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -111,52 +244,62 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
 
             const SizedBox(height: 12),
 
-            /// SETS
-            TextField(
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: "Sets"),
-              onChanged: (v) => state.sets = int.tryParse(v) ?? 1,
+            /// SETS + UNIT
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: "Sets",
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => state.sets = int.tryParse(v) ?? 1,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: state.durationType,
+                    decoration: const InputDecoration(
+                      labelText: "Unit",
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'reps', child: Text("Reps")),
+                      DropdownMenuItem(
+                          value: 'seconds', child: Text("Seconds")),
+                    ],
+                    onChanged: (v) => setState(() => state.durationType = v!),
+                  ),
+                ),
+              ],
             ),
 
             const SizedBox(height: 12),
 
-            /// REPS / SECONDS — NO OVERFLOW, NO MATH
+            /// MIN + MAX
             Row(
               children: [
-                Flexible(
+                Expanded(
                   child: TextField(
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: "Min"),
-                    onChanged: (v) =>
-                    state.min = int.tryParse(v) ?? 0,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: TextField(
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: "Max"),
-                    onChanged: (v) =>
-                    state.max = int.tryParse(v) ?? 0,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  width: 80,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: state.durationType,
-                    isDense: true,
-                    isExpanded: true,
                     decoration: const InputDecoration(
-                      contentPadding:
-                      EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                      labelText: "Min",
+                      border: OutlineInputBorder(),
                     ),
-                    items: const [
-                      DropdownMenuItem(value: 'reps', child: Text("Reps")),
-                      DropdownMenuItem(value: 'seconds', child: Text("Sec")),
-                    ],
-                    onChanged: (v) =>
-                        setState(() => state.durationType = v!),
+                    onChanged: (v) => state.min = int.tryParse(v) ?? 0,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: "Max",
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => state.max = int.tryParse(v) ?? 0,
                   ),
                 ),
               ],
@@ -219,6 +362,58 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
         ),
       );
     });
+  }
+
+  Future<void> _saveProgram() async {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Enter a program name first")),
+      );
+      return;
+    }
+    final total = exercisesByCategory.values
+        .fold<int>(0, (sum, list) => sum + list.length);
+    if (total == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Add at least one exercise")),
+      );
+      return;
+    }
+
+    List<LocalExerciseEntry> toEntries(String key) {
+      return exercisesByCategory[key]!.map((e) {
+        final ex = _allExercises.firstWhere((x) => x.id == e.exerciseId);
+        return LocalExerciseEntry(
+          exerciseId: e.exerciseId,
+          exerciseName: ex.name,
+          mediaUrl: ex.mediaUrl ?? '',
+          coachingCues: ex.coachingCues,
+          sets: e.sets,
+          minQuantity: e.minQuantity,
+          maxQuantity: e.maxQuantity,
+          durationType: e.durationType,
+        );
+      }).toList();
+    }
+
+    final program = LocalCustomProgram(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      name: name,
+      createdAt: DateTime.now(),
+      weeks: _weeks,
+      daysPerWeek: _daysPerWeek,
+      warmup: toEntries('warmup'),
+      main: toEntries('main'),
+      cooldown: toEntries('cooldown'),
+    );
+
+    await LocalProgramService.save(program);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('"$name" saved to My Programs')),
+    );
   }
 
   void _startWorkout() {
