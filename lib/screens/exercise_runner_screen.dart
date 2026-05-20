@@ -600,6 +600,8 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
 
       await _saveState();
 
+      final completionValue = _isTimed ? (secondsLogged ?? 0) : repsLogged;
+
       await _svc.logSet(
         exercise: {
           ..._currentExercise,
@@ -609,7 +611,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
         lastSelectedSeconds: secondsLogged ?? 0,
         lastSelectedReps: repsLogged,
         setIndex: setIndexToLog,
-        repsCompleted: repsLogged,
+        repsCompleted: completionValue,
       );
 
       await _svc.queueCompletion(
@@ -618,7 +620,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
         dayNumber: widget.dayNumber,
         exerciseId: exerciseIdToLog,
         setIndex: setIndexToLog,
-        repsCompleted: repsLogged,
+        repsCompleted: completionValue,
       );
 
       // ── Achievement progress ───────────────────────────────────

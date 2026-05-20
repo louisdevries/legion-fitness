@@ -20,6 +20,12 @@ class SyncService {
     if (pending.isEmpty) return;
 
     for (final log in pending) {
+      // programId=0 means a local-only custom program — mark synced immediately
+      // so the entry doesn't pile up in the retry queue.
+      if (log.programId == 0) {
+        await db.exerciseLogsDao.markSynced(log.id);
+        continue;
+      }
       try {
         await ProgressService.logExerciseCompletion(
           programId: log.programId,
@@ -31,7 +37,7 @@ class SyncService {
         );
         await db.exerciseLogsDao.markSynced(log.id);
       } catch (e) {
-        continue; // ← was 'break', which stopped syncing all remaining logs
+        continue;
       }
     }
   }

@@ -68,7 +68,7 @@ class _ProgressScreenState extends State<ProgressScreen>
       return;
     }
 
-    final programLogs = await ProgressService.getUserProgress();
+    final programLogs = await ProgressService.getUserCompletions();
     final exerciseList = await ExerciseService.getAllExercises();
 
     final programData =
@@ -305,12 +305,17 @@ class _ProgressScreenState extends State<ProgressScreen>
           ],
         ),
       ),
-      floatingActionButton: _tabController.index == 2
+      floatingActionButton: _tabController.index == 1
           ? FloatingActionButton(
-        onPressed: addPhoto,
-        child: const Icon(Icons.camera_alt),
-      )
-          : null,
+              onPressed: _showLogWeightDialog,
+              child: const Icon(Icons.edit),
+            )
+          : _tabController.index == 2
+              ? FloatingActionButton(
+                  onPressed: addPhoto,
+                  child: const Icon(Icons.camera_alt),
+                )
+              : null,
       body: TabBarView(
         controller: _tabController,
         children: [
@@ -320,6 +325,84 @@ class _ProgressScreenState extends State<ProgressScreen>
         ],
       ),
     );
+  }
+
+  Future<void> _showLogWeightDialog() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    final controller = TextEditingController();
+    if (weightLogs.isNotEmpty) {
+      final latest = weightLogs.reduce((a, b) => a.date.isAfter(b.date) ? a : b);
+      controller.text = latest.weight.toStringAsFixed(1);
+    }
+
+    double? savedValue;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SingleChildScrollView(
+        padding: EdgeInsets.only(
+          left: 24,
+          right: 24,
+          top: 24,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Log Weight',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Weight (kg)',
+                border: OutlineInputBorder(),
+                suffixText: 'kg',
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () {
+                  final value = double.tryParse(controller.text.trim());
+                  if (value == null || value <= 0) return;
+                  savedValue = value;
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Save'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    // Do NOT call controller.dispose() here — showModalBottomSheet resolves
+    // as soon as Navigator.pop fires, but the dismiss animation keeps the
+    // builder alive for several more frames. Disposing here causes a
+    // "used after dispose" error during that animation. The controller is
+    // a function-local variable and will be GC'd when this scope exits.
+
+    if (savedValue != null) {
+      await Supabase.instance.client.from('weight_logs').insert({
+        'user_id': user.id,
+        'weight_kg': savedValue,
+        'logged_at': DateTime.now().toIso8601String(),
+      });
+      await loadData();
+    }
   }
 
   Widget _overviewTab() {

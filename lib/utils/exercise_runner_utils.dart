@@ -31,13 +31,23 @@ class ExerciseRunnerUtils {
   /// - timed exercises: just the number (the unit is shown elsewhere)
   /// - rep-based: just the number
   /// - ranges (min != max): "8-12"
-  static String getQuantityDisplay(Map<String, dynamic> exercise) {
+  static String getQuantityDisplay(
+      Map<String, dynamic> exercise, {
+        int? currentSet,
+      }) {
+    final setQuantities = exercise['set_quantities'];
+    if (setQuantities is List &&
+        setQuantities.isNotEmpty &&
+        currentSet != null &&
+        currentSet <= setQuantities.length) {
+      final v = (setQuantities[currentSet - 1] as num).toInt();
+      if (v > 0) return '$v';
+    }
     if (isUntilFailure(exercise)) return 'until failure';
     final minQ = getMinQuantity(exercise);
     final maxQ = getMaxQuantity(exercise);
     return minQ == maxQ ? '$minQ' : '$minQ-$maxQ';
   }
-
   /// True when this exercise's countdown should be a stopwatch (any
   /// duration type containing "second").
   static bool isTimedExercise(Map<String, dynamic> exercise) {

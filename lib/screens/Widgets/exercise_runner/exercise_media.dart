@@ -23,24 +23,24 @@ class ExerciseMedia extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: SizedBox(
-        height: 220,
-        width: double.infinity,
-        child: !mediaReady
-            ? const Center(child: CircularProgressIndicator())
-            : _hasValidUrl
-            ? CachedNetworkImage(
-          imageUrl: mediaUrl,
-          height: 220,
-          width: double.infinity,
-          fit: BoxFit.cover,
-          placeholder: (context, url) =>
-          const Center(child: CircularProgressIndicator()),
-          errorWidget: (context, url, error) => _placeholder(),
-        )
-            : _placeholder(),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 320),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: AspectRatio(
+          aspectRatio: 9 / 16,
+          child: !mediaReady
+              ? const Center(child: CircularProgressIndicator())
+              : _hasValidUrl
+                  ? CachedNetworkImage(
+                      imageUrl: mediaUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) =>
+                          const Center(child: CircularProgressIndicator()),
+                      errorWidget: (context, url, error) => _placeholder(),
+                    )
+                  : _placeholder(),
+        ),
       ),
     );
   }

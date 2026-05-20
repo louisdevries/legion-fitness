@@ -6,6 +6,7 @@ import 'exercise_preview_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:legion_fitness/main.dart';
 import '../utils/user_prefs.dart';
+import '../database/app_database.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -69,6 +70,120 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Program deactivated')),
+    );
+  }
+
+  Future<void> _confirmResetProgram() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset Program'),
+        content: const Text(
+          'This will clear all your progress for this program and restart from Week 1, Day 1. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) await _resetProgram();
+  }
+
+  Future<void> _resetProgram() async {
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      // Clear local SQLite logs first so SyncService can't re-insert
+      // them into Supabase after the delete.
+      await AppDatabase.instance.exerciseLogsDao
+          .deleteLogsForProgram(widget.programId);
+
+      final prefs = await SharedPreferences.getInstance();
+      final queue = prefs.getStringList('completion_queue') ?? [];
+      if (queue.isNotEmpty) {
+        await prefs.remove('completion_queue');
+      }
+      // Also clear any in-progress workout for this program — otherwise
+      // the runner could resume mid-set on data that no longer exists.
+      await prefs.remove('active_session');
+
+      // Delete exercise_completions and verify rows were actually removed.
+      // Supabase's delete returns success even if RLS blocks all rows;
+      // adding .select() returns the deleted rows so we can detect this.
+      final completionsDeleted = await supabase
+          .from('exercise_completions')
+          .delete()
+          .eq('program_id', widget.programId)
+          .eq('user_id', userId)
+          .select();
+
+      // Same for progress_logs — it has stale data from previous weeks
+      // that the progression engine reads from.
+      final logsDeleted = await supabase
+          .from('progress_logs')
+          .delete()
+          .eq('program_id', widget.programId)
+          .eq('user_id', userId)
+          .select();
+
+      debugPrint(
+          'Reset: removed ${completionsDeleted.length} completions, '
+              '${logsDeleted.length} progress logs');
+
+      // If both came back empty AND we know the user has rows for this
+      // program (which is why they're hitting reset), RLS is likely
+      // blocking. Surface this clearly.
+      if (completionsDeleted.isEmpty && logsDeleted.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Reset returned no rows. Check Supabase RLS policies '
+                  'allow DELETE on exercise_completions and progress_logs.',
+            ),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 6),
+          ),
+        );
+        return;
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Reset failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (isActiveProgram) {
+      await UserPrefs.setInt('active_week_number', 1);
+    }
+
+    setState(() {
+      completedDaysByWeek.clear();
+      highestUnlockedWeek = 1;
+      selectedWeek = 1;
+      isLoading = true;
+    });
+
+    await loadProgramStructure();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Program reset to Week 1')),
     );
   }
 
@@ -344,6 +459,26 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
               icon: const Icon(Icons.arrow_back, color: Colors.white),
               onPressed: () => Navigator.pop(context),
             ),
+            actions: [
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert, color: Colors.white),
+                onSelected: (value) {
+                  if (value == 'reset') _confirmResetProgram();
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                    value: 'reset',
+                    child: Row(
+                      children: [
+                        Icon(Icons.restart_alt, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text('Reset Program', style: TextStyle(color: Colors.red)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 fit: StackFit.expand,

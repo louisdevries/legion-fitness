@@ -28,4 +28,8 @@ class ExerciseLogsDao extends DatabaseAccessor<AppDatabase>
   Future<void> clearSynced() {
     return (delete(exerciseLogs)..where((t) => t.synced.equals(true))).go();
   }
+
+  Future<void> deleteLogsForProgram(int programId) {
+    return (delete(exerciseLogs)..where((t) => t.programId.equals(programId))).go();
+  }
 }

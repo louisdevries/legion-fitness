@@ -20,6 +20,32 @@ class ProgressService {
         .toList();
   }
 
+  static Future<List<ProgressLog>> getUserCompletions() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return [];
+
+    final response = await supabase
+        .from('exercise_completions')
+        .select()
+        .eq('user_id', user.id)
+        .order('completed_at');
+
+    return (response as List).map((e) {
+      final m = e as Map<String, dynamic>;
+      return ProgressLog(
+        id: (m['id'] as num).toInt(),
+        exerciseId: (m['exercise_id'] as num).toInt(),
+        programId: (m['program_id'] as num).toInt(),
+        weekNumber: (m['week_number'] as num).toInt(),
+        dayNumber: (m['day_number'] as num).toInt(),
+        repsCompleted: (m['reps_completed'] as num?)?.toInt() ?? 0,
+        weightUsedKg: null, // exercise_completions doesn't track weight
+        date: DateTime.parse(m['completed_at'] as String),
+        userId: m['user_id'] as String,
+      );
+    }).toList();
+  }
+
   static Future<bool> isDayCompleted({
     required int programId,
     required int weekNumber,

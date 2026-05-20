@@ -147,23 +147,14 @@ class HomeService {
       Map<String, List<Map<String, dynamic>>> exercisesByDay,
       ) {
     final Map<String, Set<int>> completedExercisesByDay = {};
-    final Set<String> workoutDates = {};
 
     for (final log in logs) {
       final week = (log['week_number'] as num?)?.toInt();
       final day = (log['day_number'] as num?)?.toInt();
       final exerciseId = (log['exercise_id'] as num?)?.toInt();
-
       if (week == null || day == null || exerciseId == null) continue;
-
       final key = "$week-$day";
-      completedExercisesByDay.putIfAbsent(key, () => <int>{});
-      completedExercisesByDay[key]!.add(exerciseId);
-
-      if (log['completed_at'] != null) {
-        final date = DateTime.parse(log['completed_at']);
-        workoutDates.add(date.toIso8601String().substring(0, 10));
-      }
+      completedExercisesByDay.putIfAbsent(key, () => <int>{}).add(exerciseId);
     }
 
     final Map<String, int> countByDay = {
@@ -172,10 +163,10 @@ class HomeService {
 
     final Map<int, Set<int>> completedByWeek = {};
 
+    // Week 1: use program_exercises as source of truth for required count.
     countByDay.forEach((key, completedCount) {
       final exercises = exercisesByDay[key];
       final total = exercises?.length ?? 0;
-
       if (total > 0 && completedCount >= total) {
         final parts = key.split('-');
         final week = int.parse(parts[0]);
@@ -183,6 +174,34 @@ class HomeService {
         completedByWeek.putIfAbsent(week, () => {}).add(day);
       }
     });
+
+    // Weeks 2+: exercises are generated, not stored in program_exercises.
+    // Use week 1's required count as reference.
+    for (final key in countByDay.keys) {
+      final parts = key.split('-');
+      final week = int.parse(parts[0]);
+      final day = int.parse(parts[1]);
+      if (week <= 1) continue;
+      final required = exercisesByDay['1-$day']?.length ?? 0;
+      if (required > 0 && countByDay[key]! >= required) {
+        completedByWeek.putIfAbsent(week, () => {}).add(day);
+      }
+    }
+
+    // Only mark a calendar date as a workout day if a full program day was
+    // completed on it. Partial sessions (user quit early) are excluded.
+    final Set<String> workoutDates = {};
+    for (final log in logs) {
+      final week = (log['week_number'] as num?)?.toInt();
+      final day = (log['day_number'] as num?)?.toInt();
+      if (week == null || day == null) continue;
+      if (completedByWeek[week]?.contains(day) == true) {
+        if (log['completed_at'] != null) {
+          final date = DateTime.parse(log['completed_at']);
+          workoutDates.add(date.toIso8601String().substring(0, 10));
+        }
+      }
+    }
 
     return _CompletionData(
       countByDay: countByDay,
@@ -229,40 +248,24 @@ class HomeService {
           .maybeSingle();
 
       final totalWeeks = programData?['weeks'] as int? ?? 6;
-
-      int highestCompletedWeek = 1;
-      final weekPattern = RegExp(r'^(\d+)-\d+$');
-      for (final key in completedCountByDay.keys) {
-        final match = weekPattern.firstMatch(key);
-        if (match != null) {
-          final week = int.parse(match.group(1)!);
-          if (week > highestCompletedWeek) highestCompletedWeek = week;
-        }
-      }
-
       final daysPerWeek =
           exercisesByDay.keys.where((k) => k.startsWith('1-')).length;
 
-      int completedDaysInHighestWeek = 0;
-      for (int day = 1; day <= daysPerWeek; day++) {
-        final key = '$highestCompletedWeek-$day';
-        final completed = completedCountByDay[key] ?? 0;
-        if (completed > 0) completedDaysInHighestWeek++;
-      }
-
-      if (completedDaysInHighestWeek >= daysPerWeek) {
-        if (highestCompletedWeek < totalWeeks) {
-          nextWeek = highestCompletedWeek + 1;
-          nextDay = 1;
-        }
-      } else {
+      // Weeks 2+ exercises are generated progressively and are not stored in
+      // program_exercises, so use week 1's exercise count as the required
+      // threshold. Scan forward and return the first day that is not fully
+      // complete (unique completions < required exercises for that day).
+      outer:
+      for (int week = 2; week <= totalWeeks; week++) {
         for (int day = 1; day <= daysPerWeek; day++) {
-          final key = '$highestCompletedWeek-$day';
+          final key = '$week-$day';
           final completed = completedCountByDay[key] ?? 0;
-          if (completed == 0) {
-            nextWeek = highestCompletedWeek;
+          final required = exercisesByDay['1-$day']?.length ?? 0;
+          if (required == 0) continue;
+          if (completed < required) {
+            nextWeek = week;
             nextDay = day;
-            break;
+            break outer;
           }
         }
       }
