@@ -4,11 +4,20 @@ import 'package:flutter/material.dart';
 class ExerciseMedia extends StatelessWidget {
   final String mediaUrl;
   final bool mediaReady;
+  // When true the widget expands to fill its parent (landscape mode).
+  // When false it renders at a fixed portrait height.
+  final bool expand;
+  // BoxFit to use when rendering the image.
+  // Use BoxFit.contain (portrait) to show the full image without cropping.
+  // Use BoxFit.cover (landscape) to fill the panel.
+  final BoxFit fit;
 
   const ExerciseMedia({
     super.key,
     required this.mediaUrl,
     required this.mediaReady,
+    this.expand = false,
+    this.fit = BoxFit.cover,
   });
 
   bool get _hasValidUrl {
@@ -23,25 +32,28 @@ class ExerciseMedia extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 320),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: AspectRatio(
-          aspectRatio: 9 / 16,
-          child: !mediaReady
-              ? const Center(child: CircularProgressIndicator())
-              : _hasValidUrl
-                  ? CachedNetworkImage(
-                      imageUrl: mediaUrl,
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) =>
-                          const Center(child: CircularProgressIndicator()),
-                      errorWidget: (context, url, error) => _placeholder(),
-                    )
-                  : _placeholder(),
-        ),
-      ),
+    Widget content;
+    if (!mediaReady) {
+      content = const Center(child: CircularProgressIndicator());
+    } else if (_hasValidUrl) {
+      content = CachedNetworkImage(
+        imageUrl: mediaUrl,
+        fit: fit,
+        width: double.infinity,
+        height: double.infinity,
+        placeholder: (_, __) =>
+            const Center(child: CircularProgressIndicator()),
+        errorWidget: (_, __, ___) => _placeholder(),
+      );
+    } else {
+      content = _placeholder();
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: expand
+          ? SizedBox.expand(child: content)
+          : SizedBox(height: 260, width: double.infinity, child: content),
     );
   }
 

@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/program_exercise_service.dart';
 import '../services/workout_engine_service.dart';
 import 'exercise_preview_screen.dart';
+import 'exercise_runner_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:legion_fitness/main.dart';
 import '../utils/user_prefs.dart';
@@ -636,11 +638,71 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                       onTap: locked
                           ? null
                           : () async {
+                        // Check for an existing in-progress session.
+                        final prefs = await SharedPreferences.getInstance();
+                        final sessionJson = prefs.getString('active_session');
+                        bool hasSession = false;
+
+                        if (sessionJson != null) {
+                          try {
+                            final data = jsonDecode(sessionJson) as Map<String, dynamic>;
+                            hasSession =
+                                data['programId'] == widget.programId &&
+                                data['weekNumber'] == selectedWeek &&
+                                data['dayNumber'] == day;
+                          } catch (_) {}
+                        }
+
+                        if (hasSession && mounted) {
+                          final choice = await showDialog<String>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Resume Workout?'),
+                              content: const Text(
+                                'You have an unfinished workout. Resume where you left off or start fresh?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, 'reset'),
+                                  child: const Text('Start Fresh',
+                                      style: TextStyle(color: Colors.red)),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () => Navigator.pop(ctx, 'resume'),
+                                  child: const Text('Resume'),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          if (!mounted) return;
+
+                          if (choice == 'resume') {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ExerciseRunnerScreen(
+                                  exercises: const [],
+                                  programId: widget.programId,
+                                  weekNumber: selectedWeek,
+                                  dayNumber: day,
+                                  resumeMode: true,
+                                ),
+                              ),
+                            );
+                            return;
+                          } else if (choice == 'reset') {
+                            await prefs.remove('active_session');
+                          } else {
+                            // Dismissed — do nothing.
+                            return;
+                          }
+                        }
+
                         AppSettings.showLoading();
                         try {
                           final exercises =
-                          await ProgramExerciseService
-                              .fetchExercisesForDay(
+                              await ProgramExerciseService.fetchExercisesForDay(
                             programId: widget.programId,
                             weekNumber: selectedWeek,
                             dayNumber: day,

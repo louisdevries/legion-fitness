@@ -46,9 +46,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Settings"),
-      ),
+
       body: ListView(
         children: [
           _buildAccountHeader(),
@@ -66,14 +64,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             icon: Icons.email,
             title: "Email",
             subtitle: userEmail ?? "",
-            enabled: false,
+            onTap: _showChangeEmailDialog,
           ),
           _buildTile(
             icon: Icons.lock,
             title: "Change Password",
-            onTap: () {
-              // TODO: Password reset
-            },
+            onTap: _showChangePasswordDialog,
           ),
 
           _buildSectionHeader("Progress"),
@@ -186,6 +182,229 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
+  }
+
+  // ================= ACCOUNT ACTIONS =================
+
+  Future<void> _showChangePasswordDialog() async {
+    final currentCtrl = TextEditingController();
+    final newCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+    bool currentVisible = false;
+    bool newVisible = false;
+    bool confirmVisible = false;
+    bool loading = false;
+    String? error;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: !loading,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          title: const Text('Change Password'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: currentCtrl,
+                  obscureText: !currentVisible,
+                  decoration: InputDecoration(
+                    labelText: 'Current Password',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: Icon(currentVisible
+                          ? Icons.visibility_off
+                          : Icons.visibility),
+                      onPressed: () =>
+                          setS(() => currentVisible = !currentVisible),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: newCtrl,
+                  obscureText: !newVisible,
+                  decoration: InputDecoration(
+                    labelText: 'New Password',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: Icon(newVisible
+                          ? Icons.visibility_off
+                          : Icons.visibility),
+                      onPressed: () => setS(() => newVisible = !newVisible),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: confirmCtrl,
+                  obscureText: !confirmVisible,
+                  decoration: InputDecoration(
+                    labelText: 'Confirm New Password',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: Icon(confirmVisible
+                          ? Icons.visibility_off
+                          : Icons.visibility),
+                      onPressed: () =>
+                          setS(() => confirmVisible = !confirmVisible),
+                    ),
+                  ),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(error!,
+                      style: const TextStyle(color: Colors.red),
+                      textAlign: TextAlign.center),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: loading ? null : () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            loading
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : ElevatedButton(
+                    onPressed: () async {
+                      if (newCtrl.text != confirmCtrl.text) {
+                        setS(() => error = 'Passwords do not match');
+                        return;
+                      }
+                      if (newCtrl.text.length < 6) {
+                        setS(() => error = 'Password must be at least 6 characters');
+                        return;
+                      }
+                      setS(() {
+                        loading = true;
+                        error = null;
+                      });
+                      final err = await AuthService.changePassword(
+                        currentPassword: currentCtrl.text,
+                        newPassword: newCtrl.text,
+                      );
+                      if (!ctx.mounted || !mounted) return;
+                      if (err == null) {
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Password updated successfully')),
+                        );
+                      } else {
+                        setS(() {
+                          loading = false;
+                          error = err;
+                        });
+                      }
+                    },
+                    child: const Text('Update'),
+                  ),
+          ],
+        ),
+      ),
+    );
+
+    currentCtrl.dispose();
+    newCtrl.dispose();
+    confirmCtrl.dispose();
+  }
+
+  Future<void> _showChangeEmailDialog() async {
+    final emailCtrl = TextEditingController(text: userEmail);
+    bool loading = false;
+    String? error;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: !loading,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          title: const Text('Change Email'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: emailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(
+                  labelText: 'New Email',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              if (error != null) ...[
+                const SizedBox(height: 12),
+                Text(error!,
+                    style: const TextStyle(color: Colors.red),
+                    textAlign: TextAlign.center),
+              ],
+              const SizedBox(height: 12),
+              const Text(
+                'A confirmation link will be sent to your new email address.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: loading ? null : () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            loading
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : ElevatedButton(
+                    onPressed: () async {
+                      final newEmail = emailCtrl.text.trim();
+                      if (newEmail == userEmail) {
+                        Navigator.pop(ctx);
+                        return;
+                      }
+                      setS(() {
+                        loading = true;
+                        error = null;
+                      });
+                      final err = await AuthService.changeEmail(newEmail);
+                      if (!ctx.mounted || !mounted) return;
+                      if (err == null) {
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                                'Confirmation sent! Check your new email to confirm the change.'),
+                            duration: Duration(seconds: 5),
+                          ),
+                        );
+                      } else {
+                        setS(() {
+                          loading = false;
+                          error = err;
+                        });
+                      }
+                    },
+                    child: const Text('Update'),
+                  ),
+          ],
+        ),
+      ),
+    );
+
+    emailCtrl.dispose();
   }
 
   // ================= UI HELPERS =================

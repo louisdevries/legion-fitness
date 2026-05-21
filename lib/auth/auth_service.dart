@@ -118,4 +118,50 @@ class AuthService {
     final user = currentUser;
     return user?.email;
   }
+
+  /// Change password — re-authenticates with current password first
+  static Future<String?> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    try {
+      final user = currentUser;
+      if (user?.email == null) return 'Not logged in';
+
+      // Verify current password by re-signing in
+      final res = await supabase.auth.signInWithPassword(
+        email: user!.email!,
+        password: currentPassword,
+      );
+      if (res.session == null) return 'Current password is incorrect';
+
+      await supabase.auth.updateUser(UserAttributes(password: newPassword));
+      return null;
+    } on AuthApiException catch (e) {
+      if (e.message.toLowerCase().contains('invalid')) {
+        return 'Current password is incorrect';
+      }
+      return e.message;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  /// Change email — sends a confirmation to the new address
+  static Future<String?> changeEmail(String newEmail) async {
+    try {
+      await supabase.auth.updateUser(UserAttributes(email: newEmail));
+      final user = currentUser;
+      if (user != null) {
+        await supabase
+            .from('users')
+            .update({'email': newEmail}).eq('id', user.id);
+      }
+      return null;
+    } on AuthApiException catch (e) {
+      return e.message;
+    } catch (e) {
+      return e.toString();
+    }
+  }
 }

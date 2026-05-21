@@ -446,10 +446,10 @@ class _HomeScreenState extends State<HomeScreen>
 
     return GestureDetector(
       onTap: widget.onGoToPrograms,
-      child: Container(
-        height: 220,
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
           gradient: LinearGradient(
             colors: [
               theme.colorScheme.primary.withValues(alpha: 0.85),
@@ -551,6 +551,7 @@ class _HomeScreenState extends State<HomeScreen>
           ],
         ),
       ),
+      ),
     );
   }
 
@@ -561,10 +562,10 @@ class _HomeScreenState extends State<HomeScreen>
 
     return GestureDetector(
       onTap: _state.isProgramComplete ? null : _navigateToWorkout,
-      child: Container(
-        height: 220,
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.18),
@@ -626,6 +627,7 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ],
         ),
+      ),
       ),
     );
   }

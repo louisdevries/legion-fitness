@@ -755,53 +755,58 @@ class _ProgramCard extends StatelessWidget {
         margin: EdgeInsets.zero,
         elevation: 3,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.zero,
           side: isActive
               ? BorderSide(
-            color: Theme.of(context).colorScheme.primary,
-            width: 2,
-          )
+                  color: Theme.of(context).colorScheme.primary,
+                  width: 2,
+                )
               : BorderSide.none,
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
-          alignment: Alignment.bottomLeft,
           children: [
-            Image.network(
-              program.imageUrl,
-              height: 180,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stack) => Container(
-                height: 180,
-                color: Colors.grey.shade300,
-                child: const Icon(Icons.image, size: 50),
-              ),
-            ),
-            Container(
-              height: 180,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [
-                    Colors.black.withValues(alpha: 0.7),
-                    Colors.transparent,
-                  ],
+            AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Image.network(
+                program.imageUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stack) => Container(
+                  color: Colors.grey.shade300,
+                  child: const Icon(Icons.image, size: 50),
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                program.name,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  shadows: [
-                    Shadow(color: Colors.black54, blurRadius: 4),
-                  ],
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.7),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  program.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    shadows: [
+                      Shadow(color: Colors.black54, blurRadius: 4),
+                    ],
+                  ),
                 ),
               ),
             ),

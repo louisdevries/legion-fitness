@@ -188,9 +188,24 @@ class ExerciseGenerator {
   }) {
     final result = <int>[];
     for (int i = 1; i <= sets; i++) {
-      final base = i <= baseQuantities.length ? baseQuantities[i - 1] : baseQuantities.last;
+      final base = i <= baseQuantities.length
+          ? baseQuantities[i - 1]
+          : baseQuantities.last;
       final prev = previousBySetIndex[i];
-      result.add(prev != null ? prev + 1 : base);
+
+      // If no previous log OR previous was 0 (a marker, not a real
+      // performance), just use the prescribed base value.
+      if (prev == null || prev <= 0) {
+        result.add(base);
+        continue;
+      }
+
+      // If the user actually performed reps, progress from whichever
+      // is higher: the prescribed base, or their previous + 1.
+      // This way:
+      //   - Crushing the prescribed (prev >= base) → bump to prev + 1
+      //   - Falling short of prescribed (prev < base) → stay at base
+      result.add(prev + 1 > base ? prev + 1 : base);
     }
     return result;
   }

@@ -758,13 +758,6 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
   // ── Build ────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final coachingCues = ExerciseRunnerUtils.getCoachingCues(_activeExercise);
-    final mediaUrl = ExerciseRunnerUtils.getMediaUrl(_activeExercise);
-    final quantityDisplay = ExerciseRunnerUtils.getQuantityDisplay(
-      _activeExercise,
-      currentSet: _s.currentSet,
-    );
-
     return WillPopScope(
       onWillPop: _confirmExit,
       child: Scaffold(
@@ -791,142 +784,336 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
             },
           ),
         ),
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
+        body: OrientationBuilder(
+          builder: (context, orientation) {
+            final coachingCues =
+                ExerciseRunnerUtils.getCoachingCues(_activeExercise);
+            final mediaUrl =
+                ExerciseRunnerUtils.getMediaUrl(_activeExercise);
+            final quantityDisplay = ExerciseRunnerUtils.getQuantityDisplay(
+              _activeExercise,
+              currentSet: _s.currentSet,
+            );
+            return orientation == Orientation.landscape
+                ? _buildLandscapeBody(coachingCues, mediaUrl, quantityDisplay)
+                : _buildPortraitBody(coachingCues, mediaUrl, quantityDisplay);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPortraitBody(
+      String coachingCues, String mediaUrl, String quantityDisplay) {
+    // Shared header widgets present in both rest and exercise states.
+    final header = <Widget>[
+      if (!_s.isResting && !_isSuperset)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Row(
             children: [
-              if (!_s.isResting && !_isSuperset)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          ExerciseRunnerUtils.getName(_activeExercise),
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (_currentAlternative != null)
-                        IconButton(
-                          icon: Icon(_s.usingAlternative
-                              ? Icons.swap_horiz
-                              : Icons.sync_alt),
-                          tooltip: _s.usingAlternative
-                              ? 'Switch to main'
-                              : 'Try easier version',
-                          onPressed: _switchAlternative,
-                        ),
-                    ],
+              Expanded(
+                child: Text(
+                  ExerciseRunnerUtils.getName(_activeExercise),
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
                   ),
-                ),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: WorkoutProgressBar(
-                  completed: _s.completedSets,
-                  total: _totalRequiredSets,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-
-              // ── Set counter + state chip ─────────────────────
-              if (!_s.isResting)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Set ${_s.currentSet} / $_totalSets',
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                    if (_isSuperset)
-                      _Chip(
-                        label: _onSupersetPartner ? '2nd exercise' : '1st exercise',
-                        bg: Colors.purple.shade100,
-                        fg: Colors.purple.shade700,
-                      )
-                    else if (_isEachSide)
-                      _Chip(
-                        label: _s.onSecondSide ? 'Right side' : 'Left side',
-                        bg: Colors.teal.shade100,
-                        fg: Colors.teal.shade700,
-                      )
-                    else if (_s.usingAlternative)
-                        _Chip(
-                          label: 'Easier Version',
-                          bg: Colors.orange.shade100,
-                          fg: Colors.orange.shade700,
-                        ),
-                  ],
-                ),
-
-              // ── Superset exercise name label ──────────────────────
-              if (_isSuperset && !_s.isResting) ...[
-                const SizedBox(height: 8),
-                Text(
-                  ExerciseRunnerUtils.getName(_activeExercise),
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.purple.shade700,
-                  ),
-                ),
-              ],
-
-              const SizedBox(height: 12),
-
-              if (_s.isResting) ...[
-                const SizedBox(height: 8),
-                ProgressRingCircle(
-                  remainingSeconds: _s.remainingSeconds,
-                  totalSeconds: _s.totalSeconds,
-                  isPaused: _s.isPaused,
-                  onTogglePause: _togglePause,
-                  onMinus: () => _adjustTimer(-5),
-                  onPlus: () => _adjustTimer(5),
-                ),
-                if (_nextActiveExercise != null)
-                  NextExercisePreview(exercise: _nextActiveExercise!),
-              ] else
-                ExerciseMedia(mediaUrl: mediaUrl, mediaReady: _s.mediaReady),
-
-              const SizedBox(height: 16),
-              if (!_s.isResting) CoachingCueBox(cues: coachingCues),
-              const SizedBox(height: 16),
-
-              if (!_s.isResting)
-                ProgressRing(
-                  isTimed: _isTimed,
-                  isResting: false,
-                  isPaused: _s.isPaused,
-                  remainingSeconds: _s.remainingSeconds,
-                  totalSeconds: _s.totalSeconds,
-                  quantityDisplay: quantityDisplay,
-                  onTogglePause: _isTimed ? _togglePause : null,
-                  onMinus: _isTimed ? () => _adjustTimer(-5) : null,
-                  onPlus: _isTimed ? () => _adjustTimer(5) : null,
-                ),
-              const SizedBox(height: 12),
-
-              if (_s.isResting)
-                RestControls(onSkip: _skipRest)
-              else
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                    _isSuperset ? Colors.purple.shade700 : null,
-                    foregroundColor: _isSuperset ? Colors.white : null,
-                  ),
-                  onPressed: () => _completeSet(logSet: true),
-                  // Button label changes depending on superset state
-                  child: Text(_isSuperset && !_onSupersetPartner
-                      ? 'Next Exercise →'
-                      : 'Finish Set'),
+              if (_currentAlternative != null)
+                IconButton(
+                  icon: Icon(_s.usingAlternative
+                      ? Icons.swap_horiz
+                      : Icons.sync_alt),
+                  tooltip: _s.usingAlternative
+                      ? 'Switch to main'
+                      : 'Try easier version',
+                  onPressed: _switchAlternative,
                 ),
             ],
           ),
         ),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: WorkoutProgressBar(
+          completed: _s.completedSets,
+          total: _totalRequiredSets,
+        ),
       ),
+      if (!_s.isResting)
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Set ${_s.currentSet} / $_totalSets',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            if (_isSuperset)
+              _Chip(
+                label: _onSupersetPartner ? '2nd exercise' : '1st exercise',
+                bg: Colors.purple.shade100,
+                fg: Colors.purple.shade700,
+              )
+            else if (_isEachSide)
+              _Chip(
+                label: _s.onSecondSide ? 'Right side' : 'Left side',
+                bg: Colors.teal.shade100,
+                fg: Colors.teal.shade700,
+              )
+            else if (_s.usingAlternative)
+                _Chip(
+                  label: 'Easier Version',
+                  bg: Colors.orange.shade100,
+                  fg: Colors.orange.shade700,
+                ),
+          ],
+        ),
+      if (_isSuperset && !_s.isResting) ...[
+        const SizedBox(height: 8),
+        Text(
+          ExerciseRunnerUtils.getName(_activeExercise),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.purple.shade700,
+          ),
+        ),
+      ],
+      const SizedBox(height: 12),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          ...header,
+
+          // ── Rest state ───────────────────────────────────────
+          if (_s.isResting) ...[
+            const SizedBox(height: 8),
+            ProgressRingCircle(
+              remainingSeconds: _s.remainingSeconds,
+              totalSeconds: _s.totalSeconds,
+              isPaused: _s.isPaused,
+              onTogglePause: _togglePause,
+              onMinus: () => _adjustTimer(-5),
+              onPlus: () => _adjustTimer(5),
+            ),
+            if (_nextActiveExercise != null)
+              NextExercisePreview(exercise: _nextActiveExercise!),
+            const SizedBox(height: 12),
+            RestControls(onSkip: _skipRest),
+
+          // ── Exercise state — image expands to fill all remaining space ──
+          ] else ...[
+            Expanded(
+              child: ExerciseMedia(
+                mediaUrl: mediaUrl,
+                mediaReady: _s.mediaReady,
+                expand: true,
+                fit: BoxFit.contain,
+              ),
+            ),
+            const SizedBox(height: 10),
+            CoachingCueBox(cues: coachingCues),
+            const SizedBox(height: 10),
+            ProgressRing(
+              isTimed: _isTimed,
+              isResting: false,
+              isPaused: _s.isPaused,
+              remainingSeconds: _s.remainingSeconds,
+              totalSeconds: _s.totalSeconds,
+              quantityDisplay: quantityDisplay,
+              onTogglePause: _isTimed ? _togglePause : null,
+              onMinus: _isTimed ? () => _adjustTimer(-5) : null,
+              onPlus: _isTimed ? () => _adjustTimer(5) : null,
+            ),
+            const SizedBox(height: 10),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor:
+                    _isSuperset ? Colors.purple.shade700 : null,
+                foregroundColor: _isSuperset ? Colors.white : null,
+              ),
+              onPressed: () => _completeSet(logSet: true),
+              child: Text(_isSuperset && !_onSupersetPartner
+                  ? 'Next Exercise →'
+                  : 'Finish Set'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLandscapeBody(
+      String coachingCues, String mediaUrl, String quantityDisplay) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // ── Left: exercise image / next-exercise preview when resting ──
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
+            child: _s.isResting
+                ? Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (_nextActiveExercise != null)
+                        NextExercisePreview(exercise: _nextActiveExercise!)
+                      else
+                        const Center(
+                          child: Icon(Icons.self_improvement,
+                              size: 64, color: Colors.grey),
+                        ),
+                    ],
+                  )
+                : ExerciseMedia(
+                    mediaUrl: mediaUrl,
+                    mediaReady: _s.mediaReady,
+                    expand: true,
+                  ),
+          ),
+        ),
+
+        // ── Right: timer/reps banner + controls ───────────────────────
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(6, 12, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Exercise name + alternative toggle
+                if (!_s.isResting && !_isSuperset)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            ExerciseRunnerUtils.getName(_activeExercise),
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (_currentAlternative != null)
+                          IconButton(
+                            icon: Icon(_s.usingAlternative
+                                ? Icons.swap_horiz
+                                : Icons.sync_alt),
+                            onPressed: _switchAlternative,
+                          ),
+                      ],
+                    ),
+                  ),
+                if (_isSuperset && !_s.isResting) ...[
+                  Text(
+                    ExerciseRunnerUtils.getName(_activeExercise),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.purple.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
+                WorkoutProgressBar(
+                  completed: _s.completedSets,
+                  total: _totalRequiredSets,
+                ),
+                const SizedBox(height: 8),
+
+                // Set counter + chip
+                if (!_s.isResting)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Set ${_s.currentSet} / $_totalSets',
+                          style:
+                              const TextStyle(fontWeight: FontWeight.bold)),
+                      if (_isSuperset)
+                        _Chip(
+                          label: _onSupersetPartner
+                              ? '2nd exercise'
+                              : '1st exercise',
+                          bg: Colors.purple.shade100,
+                          fg: Colors.purple.shade700,
+                        )
+                      else if (_isEachSide)
+                        _Chip(
+                          label: _s.onSecondSide ? 'Right side' : 'Left side',
+                          bg: Colors.teal.shade100,
+                          fg: Colors.teal.shade700,
+                        )
+                      else if (_s.usingAlternative)
+                          _Chip(
+                            label: 'Easier Version',
+                            bg: Colors.orange.shade100,
+                            fg: Colors.orange.shade700,
+                          ),
+                    ],
+                  ),
+                const SizedBox(height: 8),
+
+                // Timer / reps banner
+                if (_s.isResting)
+                  ProgressRing(
+                    isTimed: false,
+                    isResting: true,
+                    isPaused: _s.isPaused,
+                    remainingSeconds: _s.remainingSeconds,
+                    totalSeconds: _s.totalSeconds,
+                    quantityDisplay: '',
+                    onTogglePause: _togglePause,
+                    onMinus: () => _adjustTimer(-5),
+                    onPlus: () => _adjustTimer(5),
+                  )
+                else
+                  ProgressRing(
+                    isTimed: _isTimed,
+                    isResting: false,
+                    isPaused: _s.isPaused,
+                    remainingSeconds: _s.remainingSeconds,
+                    totalSeconds: _s.totalSeconds,
+                    quantityDisplay: quantityDisplay,
+                    onTogglePause: _isTimed ? _togglePause : null,
+                    onMinus: _isTimed ? () => _adjustTimer(-5) : null,
+                    onPlus: _isTimed ? () => _adjustTimer(5) : null,
+                  ),
+                const SizedBox(height: 8),
+
+                if (!_s.isResting) CoachingCueBox(cues: coachingCues),
+                const SizedBox(height: 8),
+
+                // Action button
+                SizedBox(
+                  width: double.infinity,
+                  child: _s.isResting
+                      ? RestControls(onSkip: _skipRest)
+                      : ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                _isSuperset ? Colors.purple.shade700 : null,
+                            foregroundColor:
+                                _isSuperset ? Colors.white : null,
+                          ),
+                          onPressed: () => _completeSet(logSet: true),
+                          child: Text(_isSuperset && !_onSupersetPartner
+                              ? 'Next Exercise →'
+                              : 'Finish Set'),
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

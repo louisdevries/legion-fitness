@@ -6,6 +6,7 @@ import 'widgets/loading_overlay.dart';
 import 'package:flutter_map/flutter_map.dart';
 
 // Screens
+import 'auth/splash_screen.dart';
 import 'auth/welcome_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/programs_screen.dart';
@@ -118,14 +119,14 @@ class LegionFitnessApp extends StatelessWidget {
           themeMode: themeMode,
 
           theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
             useMaterial3: true,
           ),
 
           darkTheme: ThemeData(
             brightness: Brightness.dark,
             colorScheme: ColorScheme.fromSeed(
-              seedColor: Colors.deepPurple,
+              seedColor: Colors.blue,
               brightness: Brightness.dark,
             ),
             useMaterial3: true,
@@ -143,7 +144,7 @@ class LegionFitnessApp extends StatelessWidget {
             );
           },
 
-          home: const AuthGate(),
+          home: const SplashScreen(),
         );
       },
     );
@@ -154,37 +155,12 @@ class LegionFitnessApp extends StatelessWidget {
 /// ===================== AUTH GATE =======================
 /// =======================================================
 
-class AuthGate extends StatefulWidget {
-  const AuthGate({super.key});
-
-  @override
-  State<AuthGate> createState() => _AuthGateState();
-}
-
-class _AuthGateState extends State<AuthGate> {
-  bool? hasSeenWelcome;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadWelcomeFlag();
-  }
-
-  Future<void> _loadWelcomeFlag() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      hasSeenWelcome = prefs.getBool("hasSeenWelcome") ?? false;
-    });
-  }
+class AuthGate extends StatelessWidget {
+  final bool hasSeenWelcome;
+  const AuthGate({super.key, this.hasSeenWelcome = false});
 
   @override
   Widget build(BuildContext context) {
-    if (hasSeenWelcome == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
     return StreamBuilder<AuthState>(
       stream: Supabase.instance.client.auth.onAuthStateChange,
       builder: (context, snapshot) {
@@ -195,7 +171,7 @@ class _AuthGateState extends State<AuthGate> {
           return const MainShell(isGuest: false);
         }
 
-        if (!hasSeenWelcome!) {
+        if (!hasSeenWelcome) {
           return const WelcomeScreen();
         }
 
