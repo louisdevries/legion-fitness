@@ -15,6 +15,8 @@ import 'exercise_runner_screen.dart';
 import 'dart:convert';
 import '../services/achievement_service.dart';
 import 'achievements_screen.dart';
+import '../services/xp_service.dart';
+import '../widgets/xp_widgets.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onGoToPrograms;
@@ -33,6 +35,7 @@ class _HomeScreenState extends State<HomeScreen>
   StreamSubscription<AuthState>? _authSub;
   late HomeState _state;
   late AnimationController _pulseController;
+  XpSummary _xpSummary = const XpSummary.empty();
 
   // ================= HEALTH CONNECT =================
   final Health _health = Health();
@@ -55,11 +58,13 @@ class _HomeScreenState extends State<HomeScreen>
       if (mounted) {
         _loadHomeData();
         _loadRecentUnlocks();
+        _loadXp();
       }
     });
 
     _loadHomeData();
     _loadRecentUnlocks();
+    _loadXp();
   }
 
 
@@ -76,6 +81,12 @@ class _HomeScreenState extends State<HomeScreen>
     if (mounted) {
       setState(() => _state = newState);
     }
+  }
+
+  Future<void> _loadXp() async {
+    final summary = await XpService.fetchSummary();
+    if (!mounted) return;
+    setState(() => _xpSummary = summary);
   }
 
   Future<void> _onRefresh() async {
@@ -152,7 +163,6 @@ class _HomeScreenState extends State<HomeScreen>
       if (mounted) setState(() => _steps = steps);
 
       // ✅ Save to Supabase
-      // ✅ Save to Supabase
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {
         await Supabase.instance.client.from('daily_steps').upsert({
@@ -165,6 +175,19 @@ class _HomeScreenState extends State<HomeScreen>
         final unlocked = await AchievementService.onStepsLogged(
           stepsToday: steps,
         );
+        final xpGrants = await XpService.onStepsLogged(stepsToday: _steps);
+        if (mounted && xpGrants.isNotEmpty) {
+          _loadXp(); // refresh banner immediately
+          for (final g in xpGrants) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(g.isLevelUp
+                    ? '+${g.amount} XP — Level ${g.newLevel}!'
+                    : '+${g.amount} XP · ${g.label}'),
+              ),
+            );
+          }
+        }
         if (mounted && unlocked.isNotEmpty) {
           _loadRecentUnlocks();
           for (final a in unlocked) {
@@ -299,11 +322,18 @@ class _HomeScreenState extends State<HomeScreen>
         padding: const EdgeInsets.all(16),
         child: Column(
         children: [
+          HomeXpBanner(
+            summary: _xpSummary,
+            onTap: () {
+              // Optional: navigate to profile or achievements
+            },
+          ),
+          const SizedBox(height: 16),
           _state.programId != null &&
                   Supabase.instance.client.auth.currentUser != null
               ? _buildResumeWorkoutBanner()
               : _buildChooseProgramBanner(),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           _buildWeeklyProgressCard(),
           const SizedBox(height: 16),
           _buildStepCounterCard(),
@@ -311,8 +341,7 @@ class _HomeScreenState extends State<HomeScreen>
             const SizedBox(height: 16),
             _buildRecentUnlocksCard(),
           ],
-          const SizedBox(height: 32),
-
+          const SizedBox(height: 16),
           // Custom Programs
           GestureDetector(
             onTap: () {
@@ -330,7 +359,7 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ),
 
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
 
           // Premium Program
           GestureDetector(
@@ -350,7 +379,7 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ),
 
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
 
           // Meal Suggestions
           _buildActionSection(
@@ -450,6 +479,7 @@ class _HomeScreenState extends State<HomeScreen>
         aspectRatio: 16 / 9,
         child: Container(
         decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
           gradient: LinearGradient(
             colors: [
               theme.colorScheme.primary.withValues(alpha: 0.85),
@@ -566,6 +596,7 @@ class _HomeScreenState extends State<HomeScreen>
         aspectRatio: 16 / 9,
         child: Container(
         decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.18),
