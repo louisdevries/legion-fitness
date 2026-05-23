@@ -510,7 +510,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildGoogleFitTile() {
     return ListTile(
       leading: const Icon(Icons.monitor_heart),
-      title: const Text("Google Fit"),
+      title: const Text("Health Connect"),
       subtitle: Text(
         _googleFitEnabled ? "Connected — syncing daily steps" : "Not connected",
       ),

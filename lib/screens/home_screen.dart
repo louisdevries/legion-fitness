@@ -140,6 +140,18 @@ class _HomeScreenState extends State<HomeScreen>
     if (granted) await _fetchSteps();
   }
 
+  Future<void> _requestPermissions() async {
+    await AppSettings.setGoogleFitEnabled(true);
+    await _health.configure();
+    final types = [HealthDataType.STEPS];
+    final permissions = [HealthDataAccess.READ];
+    await _health.requestAuthorization(types, permissions: permissions);
+    final granted = await _health.hasPermissions(types, permissions: permissions) ?? false;
+    if (!granted) await AppSettings.setGoogleFitEnabled(false);
+    if (mounted) setState(() => _healthAuthorized = granted);
+    if (granted) await _fetchSteps();
+  }
+
   Future<void> _fetchSteps() async {
     if (!_healthAuthorized) return;
 
@@ -387,18 +399,107 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _buildStepCounterCard() {
     final theme = Theme.of(context);
 
+    // ── Not connected: prominent CTA card ──────────────────────────
+    if (!_healthAuthorized) {
+      return GestureDetector(
+        onTap: _requestPermissions,
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: theme.colorScheme.primary.withValues(alpha: 0.25),
+              width: 1.2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(
+                  alpha: theme.brightness == Brightness.dark ? 0.3 : 0.08,
+                ),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                ),
+                child: Icon(
+                  Icons.directions_walk,
+                  size: 30,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Track your steps",
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "Connect to Health Connect to see your daily step count.",
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface
+                            .withValues(alpha: 0.7),
+                        fontSize: 13,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text(
+                          "Tap to connect",
+                          style: TextStyle(
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        Icon(
+                          Icons.arrow_forward,
+                          size: 14,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // ── Connected: normal step display ─────────────────────────────
+    const dailyGoal = 10000;
+    final progress = (_steps / dailyGoal).clamp(0.0, 1.0);
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: theme.colorScheme.onSurface.withAlpha(15),
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withAlpha(
-              theme.brightness == Brightness.dark ? 72 : 26,
+            color: Colors.black.withValues(
+              alpha: theme.brightness == Brightness.dark ? 0.3 : 0.08,
             ),
             blurRadius: 8,
             offset: const Offset(0, 4),
@@ -407,14 +508,35 @@ class _HomeScreenState extends State<HomeScreen>
       ),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: theme.colorScheme.primary.withAlpha(38),
+          // Circular progress around the icon
+          SizedBox(
+            width: 56,
+            height: 56,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: CircularProgressIndicator(
+                    value: progress,
+                    strokeWidth: 4,
+                    backgroundColor:
+                    theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                    valueColor: AlwaysStoppedAnimation(
+                      progress >= 1.0
+                          ? Colors.green
+                          : theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.directions_walk,
+                  size: 24,
+                  color: theme.colorScheme.primary,
+                ),
+              ],
             ),
-            child: Icon(Icons.directions_walk,
-                size: 30, color: theme.colorScheme.primary),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -426,41 +548,37 @@ class _HomeScreenState extends State<HomeScreen>
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  _healthAuthorized ? "$_steps steps" : "-- steps",
-                  style: TextStyle(
-                    color: theme.colorScheme.onSurface.withAlpha(180),
-                    fontSize: 14,
-                  ),
-                ),
-                if (!_healthAuthorized)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.onSurface.withAlpha(15),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: theme.colorScheme.onSurface.withAlpha(40),
-                          width: 0.8,
-                        ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      "$_steps",
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurface,
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.sync_disabled,
-                              size: 12,
-                              color: theme.colorScheme.onSurface.withAlpha(140)),
-                          const SizedBox(width: 4),
-                          Text(
-                            "Connect Google Fit in Profile",
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: theme.colorScheme.onSurface.withAlpha(140),
-                            ),
-                          ),
-                        ],
+                    ),
+                    Text(
+                      " / $dailyGoal",
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: theme.colorScheme.onSurface
+                            .withValues(alpha: 0.55),
+                      ),
+                    ),
+                  ],
+                ),
+                if (progress >= 1.0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      "Goal reached 🎉",
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green.shade600,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
@@ -940,3 +1058,4 @@ class _HomeScreenState extends State<HomeScreen>
     return days[d - 1];
   }
 }
+

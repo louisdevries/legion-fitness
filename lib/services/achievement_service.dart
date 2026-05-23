@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:developer' as developer;
+import 'xp_service.dart';
 
 /// Service that tracks per-user achievement progress.
 ///
@@ -93,6 +94,7 @@ class AchievementService {
   /// consecutive-day workout streak.
   static Future<List<UnlockedAchievement>> onWorkoutCompleted() async {
     final streak = await _computeCurrentStreak();
+    await XpService.onStreakMilestone(streakDays: streak);
     return _setAndCheckExact(
       type: 'streak',
       newValue: streak,
@@ -281,18 +283,27 @@ class AchievementService {
       }, onConflict: 'user_id,achievement_definition_id');
 
       if (justCrossed) {
-        // Fetch label/description for the celebration toast.
         final meta = await _supabase
             .from('achievement_definitions')
             .select('label, description, tier')
             .eq('id', defId)
             .single();
+        final tier = (meta['tier'] as num).toInt();
+        final label = meta['label'] as String;
+
         newlyUnlocked.add(UnlockedAchievement(
           definitionId: defId,
-          label: meta['label'] as String,
+          label: label,
           description: meta['description'] as String,
-          tier: (meta['tier'] as num).toInt(),
+          tier: tier,
         ));
+
+        // Grant XP for this unlock (idempotent — won't double-grant).
+        await XpService.onAchievementUnlocked(
+          definitionId: defId,
+          tier: tier,
+          achievementLabel: label,
+        );
       }
     }
 

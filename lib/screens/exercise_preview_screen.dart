@@ -39,9 +39,9 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
   static const _categoryOrder = ['warm-up', 'main', 'cool-down'];
 
   static const _categoryLabels = {
-    'warm-up': '🔥 Warm-Up',
-    'main': '💪 Main Workout',
-    'cool-down': '🧘 Cool-Down',
+    'warm-up': 'Warm-Up',
+    'main': 'Main Workout',
+    'cool-down': 'Cool-Down',
   };
 
   String get _storageKey =>

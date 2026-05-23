@@ -17,6 +17,7 @@ import '../utils/map_gesture_handler.dart';
 import '../models/run_state.dart';
 import '../widgets/tap_route_builder.dart';
 import '../services/achievement_service.dart';
+import '../services/xp_service.dart';
 
 const String mapboxToken =
     "pk.eyJ1IjoibG91aXNkZXZyaWVzIiwiYSI6ImNtbnlsZ3d1dDAzMXgycXNlcXlyaHJrdmwifQ.bDTfupr74bI5qnK7VCgBHg";
@@ -203,6 +204,21 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
           if (mounted) {
             for (final a in unlocked) {
               _showSnackBar('🏆 Unlocked: ${a.label}');
+            }
+          }
+
+          final runId = _startTime!.millisecondsSinceEpoch ~/ 1000;
+          final xpGrants = await XpService.onRunCompleted(
+            runId: runId,
+            distanceMeters: _state.totalDistanceMeters,
+          );
+          if (mounted) {
+            for (final g in xpGrants) {
+              _showSnackBar(
+                g.isLevelUp
+                    ? '+${g.amount} XP — Level Up! Now Level ${g.newLevel}'
+                    : '+${g.amount} XP · ${g.label}',
+              );
             }
           }
 

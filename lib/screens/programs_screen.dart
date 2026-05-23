@@ -755,7 +755,7 @@ class _ProgramCard extends StatelessWidget {
         margin: EdgeInsets.zero,
         elevation: 3,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.zero,
+          borderRadius: BorderRadius.circular(16),
           side: isActive
               ? BorderSide(
                   color: Theme.of(context).colorScheme.primary,

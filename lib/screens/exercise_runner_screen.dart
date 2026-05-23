@@ -17,6 +17,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:legion_fitness/models/exercise_set_result.dart';
 import '../services/achievement_service.dart';
+import '../services/xp_service.dart';
 
 class ExerciseRunnerScreen extends StatefulWidget {
   final List<Map<String, dynamic>> exercises;
@@ -339,6 +340,8 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
       );
     }
   }
+
+
 
   // ── Session persistence ──────────────────────────────────────────
   Future<void> _saveState() async {
@@ -704,6 +707,31 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
       lastSelectedSeconds: newTotal,
     ));
   }
+  void _maybeShowXpGrants(List<XpGrant> grants) {
+    if (!mounted || grants.isEmpty) return;
+    for (final g in grants) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.star, color: Colors.amber),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  g.isLevelUp
+                      ? '+${g.amount} XP — Level Up! Now Level ${g.newLevel}'
+                      : '+${g.amount} XP · ${g.label}',
+                ),
+              ),
+            ],
+          ),
+          duration: Duration(seconds: g.isLevelUp ? 5 : 2),
+          backgroundColor: g.isLevelUp ? Colors.amber.shade700 : null,
+        ),
+      );
+    }
+  }
+
 
   // ── Exit confirmation ────────────────────────────────────────────
   Future<bool> _confirmExit() async {
@@ -734,6 +762,12 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
   Future<void> _showWorkoutComplete() async {
     final streakUnlocks = await AchievementService.onWorkoutCompleted();
     _maybeShowUnlocks(streakUnlocks);
+    final xpGrants = await XpService.onWorkoutCompleted(
+      programId: widget.programId,
+      weekNumber: widget.weekNumber,
+      dayNumber: widget.dayNumber,
+    );
+    _maybeShowXpGrants(xpGrants);
     SyncService.trySync();
     await _clearState();
     await showDialog(
