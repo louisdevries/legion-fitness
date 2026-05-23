@@ -52,7 +52,8 @@ class _HomeScreenState extends State<HomeScreen>
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
 
-    _initHealth();
+    if (AppSettings.googleFitEnabled.value) _initHealth();
+    AppSettings.googleFitEnabled.addListener(_onGoogleFitChanged);
 
     _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((event) {
       if (mounted) {
@@ -71,9 +72,18 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
+    AppSettings.googleFitEnabled.removeListener(_onGoogleFitChanged);
     _authSub?.cancel();
     _pulseController.dispose();
     super.dispose();
+  }
+
+  void _onGoogleFitChanged() {
+    if (AppSettings.googleFitEnabled.value) {
+      _initHealth();
+    } else {
+      if (mounted) setState(() { _healthAuthorized = false; _steps = 0; });
+    }
   }
 
   Future<void> _loadHomeData() async {
@@ -125,31 +135,9 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _checkAndFetchSteps() async {
     final types = [HealthDataType.STEPS];
     final permissions = [HealthDataAccess.READ];
-
-    // Check if already granted first
-    final alreadyGranted = await _health.hasPermissions(types, permissions: permissions) ?? false;
-
-    if (alreadyGranted) {
-      if (mounted) setState(() => _healthAuthorized = true);
-      await _fetchSteps();
-      return;
-    }
-
-    // Not granted yet — request it
-    await _health.requestAuthorization(types, permissions: permissions);
-
-    // Re-check after request since Android returns false even when granted
-    final confirmedGranted = await _health.hasPermissions(types, permissions: permissions) ?? false;
-
-    if (mounted) setState(() => _healthAuthorized = confirmedGranted);
-
-    if (confirmedGranted) {
-      await _fetchSteps();
-    }
-  }
-
-  Future<void> _requestPermissions() async {
-    await _checkAndFetchSteps();
+    final granted = await _health.hasPermissions(types, permissions: permissions) ?? false;
+    if (mounted) setState(() => _healthAuthorized = granted);
+    if (granted) await _fetchSteps();
   }
 
   Future<void> _fetchSteps() async {
@@ -439,7 +427,7 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "$_steps steps",
+                  _healthAuthorized ? "$_steps steps" : "-- steps",
                   style: TextStyle(
                     color: theme.colorScheme.onSurface.withAlpha(180),
                     fontSize: 14,
@@ -448,15 +436,31 @@ class _HomeScreenState extends State<HomeScreen>
                 if (!_healthAuthorized)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: GestureDetector(
-                      onTap: _requestPermissions,
-                      child: const Text(
-                        "Enable Health access",
-                        style: TextStyle(
-                          color: Colors.red,
-                          fontSize: 12,
-                          decoration: TextDecoration.underline,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.onSurface.withAlpha(15),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: theme.colorScheme.onSurface.withAlpha(40),
+                          width: 0.8,
                         ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.sync_disabled,
+                              size: 12,
+                              color: theme.colorScheme.onSurface.withAlpha(140)),
+                          const SizedBox(width: 4),
+                          Text(
+                            "Connect Google Fit in Profile",
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: theme.colorScheme.onSurface.withAlpha(140),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

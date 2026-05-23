@@ -7,7 +7,7 @@ import 'package:flutter_map/flutter_map.dart';
 
 // Screens
 import 'auth/splash_screen.dart';
-import 'auth/welcome_screen.dart';
+import 'auth/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/programs_screen.dart';
 import 'screens/progress_screen.dart';
@@ -23,6 +23,7 @@ class AppSettings {
   static final restTimerSeconds = ValueNotifier<int>(60);
   static final muteTimerSounds = ValueNotifier<bool>(false);
   static final globalLoading = ValueNotifier<bool>(false);
+  static final googleFitEnabled = ValueNotifier<bool>(false);
 
   static Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -31,6 +32,7 @@ class AppSettings {
     // Use 'rest_seconds' — the key shared with SettingsService.
     final rest = prefs.getInt('rest_seconds');
     final mute = prefs.getBool('muteTimerSounds');
+    final googleFit = prefs.getBool('googleFitEnabled');
 
     if (theme != null) {
       themeMode.value = ThemeMode.values.firstWhere(
@@ -40,6 +42,7 @@ class AppSettings {
     }
     if (rest != null) restTimerSeconds.value = rest;
     if (mute != null) muteTimerSounds.value = mute;
+    if (googleFit != null) googleFitEnabled.value = googleFit;
   }
 
   static Future<void> setThemeMode(ThemeMode mode) async {
@@ -58,6 +61,12 @@ class AppSettings {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('muteTimerSounds', mute);
     muteTimerSounds.value = mute;
+  }
+
+  static Future<void> setGoogleFitEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('googleFitEnabled', enabled);
+    googleFitEnabled.value = enabled;
   }
 
   static void showLoading() => globalLoading.value = true;
@@ -119,14 +128,14 @@ class LegionFitnessApp extends StatelessWidget {
           themeMode: themeMode,
 
           theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
             useMaterial3: true,
           ),
 
           darkTheme: ThemeData(
             brightness: Brightness.dark,
             colorScheme: ColorScheme.fromSeed(
-              seedColor: Colors.blue,
+              seedColor: Colors.green,
               brightness: Brightness.dark,
             ),
             useMaterial3: true,
@@ -172,7 +181,7 @@ class AuthGate extends StatelessWidget {
         }
 
         if (!hasSeenWelcome) {
-          return const WelcomeScreen();
+          return const LoginScreen(showSkip: true);
         }
 
         return const MainShell(isGuest: true);

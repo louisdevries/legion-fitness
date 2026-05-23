@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_service.dart';
+import '../main.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final bool showSkip;
+  const LoginScreen({super.key, this.showSkip = false});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -27,6 +30,16 @@ class _LoginScreenState extends State<LoginScreen> {
     _confirmPasswordController.dispose();
     _nameController.dispose();
     super.dispose();
+  }
+
+  Future<void> _skip() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('hasSeenWelcome', true);
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const MainShell(isGuest: true)),
+    );
   }
 
   Future<void> _submit() async {
@@ -101,6 +114,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(isLogin ? 'Login' : 'Create Account'),
+        automaticallyImplyLeading: !widget.showSkip,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -199,6 +213,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     : 'Already have an account? Login',
               ),
             ),
+            if (widget.showSkip) ...[
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: _skip,
+                child: const Text('Skip for now'),
+              ),
+            ],
           ],
         ),
       ),

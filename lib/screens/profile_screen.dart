@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:health/health.dart';
 import '../auth/auth_service.dart';
 import '../auth/login_screen.dart';
 import '../main.dart';
 import '../screens/health_profile_screen.dart';
 import '../screens/premium_program_screen.dart';
-import '../screens/workout_reminder_screen.dart';   // ← new import
+import '../screens/workout_reminder_screen.dart';
 import 'rest_timer_settings_screen.dart';
 import 'achievements_screen.dart';
+import '../widgets/xp_widgets.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -19,11 +21,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? userName;
   String? userEmail;
   bool isLoggedIn = false;
+  bool _googleFitEnabled = false;
+  bool _googleFitLoading = false;
 
   @override
   void initState() {
     super.initState();
     _loadUser();
+    _googleFitEnabled = AppSettings.googleFitEnabled.value;
   }
 
   Future<void> _loadUser() async {
@@ -44,6 +49,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!isLoggedIn) {
       return _buildLoggedOut(context);
     }
+    const ProfileXpSection();
+    const SizedBox(height: 24);
 
     return Scaffold(
 
@@ -101,6 +108,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               );
             },
           ),
+          _buildGoogleFitTile(),
 
           _buildSectionHeader("Preferences"),
           _buildTile(
@@ -182,6 +190,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
+  }
+
+  // ================= GOOGLE FIT =================
+
+  Future<void> _toggleGoogleFit(bool value) async {
+    if (_googleFitLoading) return;
+    if (!value) {
+      await AppSettings.setGoogleFitEnabled(false);
+      if (mounted) setState(() => _googleFitEnabled = false);
+      return;
+    }
+
+    setState(() => _googleFitLoading = true);
+
+    try {
+      final health = Health();
+      await health.configure();
+      final types = [HealthDataType.STEPS];
+      final permissions = [HealthDataAccess.READ];
+      await health.requestAuthorization(types, permissions: permissions);
+      final granted = await health.hasPermissions(types, permissions: permissions) ?? false;
+      await AppSettings.setGoogleFitEnabled(granted);
+      if (mounted) setState(() => _googleFitEnabled = granted);
+    } finally {
+      if (mounted) setState(() => _googleFitLoading = false);
+    }
   }
 
   // ================= ACCOUNT ACTIONS =================
@@ -470,6 +504,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
       subtitle: subtitle != null ? Text(subtitle) : null,
       trailing: enabled ? const Icon(Icons.chevron_right) : null,
       onTap: enabled ? onTap : null,
+    );
+  }
+
+  Widget _buildGoogleFitTile() {
+    return ListTile(
+      leading: const Icon(Icons.monitor_heart),
+      title: const Text("Google Fit"),
+      subtitle: Text(
+        _googleFitEnabled ? "Connected — syncing daily steps" : "Not connected",
+      ),
+      trailing: _googleFitLoading
+          ? const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Switch(
+              value: _googleFitEnabled,
+              onChanged: _toggleGoogleFit,
+            ),
     );
   }
 
