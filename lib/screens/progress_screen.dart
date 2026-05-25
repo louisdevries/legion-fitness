@@ -512,7 +512,28 @@ class _ProgressScreenState extends State<ProgressScreen>
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 40,
+                reservedSize: 52,
+                getTitlesWidget: (value, meta) {
+                  final parts = value.toStringAsFixed(1).split('.');
+                  return SideTitleWidget(
+                    meta: meta,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Text(parts[0],
+                            style: const TextStyle(fontSize: 10)),
+                        const Text('.',
+                            style: TextStyle(fontSize: 10)),
+                        SizedBox(
+                          width: 12,
+                          child: Text(parts[1],
+                              style: const TextStyle(fontSize: 10)),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ),
           ),

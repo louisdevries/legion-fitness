@@ -252,7 +252,7 @@ class _HomeScreenState extends State<HomeScreen>
         final shouldResume = await _showResumeDialog();
         if (shouldResume == null) return;
         if (shouldResume) {
-          Navigator.push(context, MaterialPageRoute(
+          await Navigator.push(context, MaterialPageRoute(
             builder: (_) => ExerciseRunnerScreen(
               exercises: const [],
               programId: _state.programId!,
@@ -261,6 +261,7 @@ class _HomeScreenState extends State<HomeScreen>
               resumeMode: true,
             ),
           ));
+          if (mounted) _loadHomeData();
           return;
         }
         await prefs.remove('active_session');
@@ -288,7 +289,8 @@ class _HomeScreenState extends State<HomeScreen>
 
       if (!mounted) return;
 
-      Navigator.push(
+      AppSettings.hideLoading();
+      await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => ExercisePreviewScreen(
@@ -299,13 +301,13 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ),
       );
+      if (mounted) _loadHomeData();
     } catch (e) {
+      AppSettings.hideLoading();
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Error loading workout: $e')));
       }
-    } finally {
-      AppSettings.hideLoading();
     }
   }
 

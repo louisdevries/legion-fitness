@@ -18,6 +18,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:legion_fitness/models/exercise_set_result.dart';
 import '../services/achievement_service.dart';
 import '../services/xp_service.dart';
+import 'workout_results_screen.dart';
 
 class ExerciseRunnerScreen extends StatefulWidget {
   final List<Map<String, dynamic>> exercises;
@@ -116,6 +117,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
   late ExerciseRunnerState _s;
   late List<Map<String, dynamic>> exercises;
   late final ExerciseRunnerService _svc;
+  late final DateTime _workoutStartTime;
   Timer? _timer;
 
   // ── Convenience getters ──────────────────────────────────────────
@@ -237,6 +239,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     super.initState();
     _s = const ExerciseRunnerState();
     _svc = ExerciseRunnerService();
+    _workoutStartTime = DateTime.now();
 
     WidgetsBinding.instance.addObserver(this);
 
@@ -617,15 +620,6 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
         repsCompleted: completionValue,
       );
 
-      await _svc.queueCompletion(
-        programId: widget.programId,
-        weekNumber: widget.weekNumber,
-        dayNumber: widget.dayNumber,
-        exerciseId: exerciseIdToLog,
-        setIndex: setIndexToLog,
-        repsCompleted: completionValue,
-      );
-
       // ── Achievement progress ───────────────────────────────────
       final unlocked = await AchievementService.onSetLogged(
         exerciseId: exerciseIdToLog,
@@ -707,30 +701,6 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
       lastSelectedSeconds: newTotal,
     ));
   }
-  void _maybeShowXpGrants(List<XpGrant> grants) {
-    if (!mounted || grants.isEmpty) return;
-    for (final g in grants) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.star, color: Colors.amber),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  g.isLevelUp
-                      ? '+${g.amount} XP — Level Up! Now Level ${g.newLevel}'
-                      : '+${g.amount} XP · ${g.label}',
-                ),
-              ),
-            ],
-          ),
-          duration: Duration(seconds: g.isLevelUp ? 5 : 2),
-          backgroundColor: g.isLevelUp ? Colors.amber.shade700 : null,
-        ),
-      );
-    }
-  }
 
 
   // ── Exit confirmation ────────────────────────────────────────────
@@ -760,31 +730,26 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
 
   // ── Workout complete ─────────────────────────────────────────────
   Future<void> _showWorkoutComplete() async {
+    final duration = DateTime.now().difference(_workoutStartTime);
     final streakUnlocks = await AchievementService.onWorkoutCompleted();
-    _maybeShowUnlocks(streakUnlocks);
     final xpGrants = await XpService.onWorkoutCompleted(
       programId: widget.programId,
       weekNumber: widget.weekNumber,
       dayNumber: widget.dayNumber,
     );
-    _maybeShowXpGrants(xpGrants);
-    SyncService.trySync();
+    await SyncService.trySync();
     await _clearState();
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: const Text('Workout Complete 💪'),
-        content: const Text('Great job! Your workout has been logged.'),
-        actions: [
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            child: const Text('Finish'),
-          ),
-        ],
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WorkoutResultsScreen(
+          duration: duration,
+          exercises: exercises,
+          totalSetsCompleted: _s.completedSetsData.length,
+          xpGrants: xpGrants,
+          achievements: streakUnlocks,
+        ),
       ),
     );
   }

@@ -678,7 +678,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                           if (!mounted) return;
 
                           if (choice == 'resume') {
-                            Navigator.push(
+                            await Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => ExerciseRunnerScreen(
@@ -690,6 +690,10 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                                 ),
                               ),
                             );
+                            if (mounted) {
+                              setState(() => isLoading = true);
+                              loadProgramStructure();
+                            }
                             return;
                           } else if (choice == 'reset') {
                             await prefs.remove('active_session');
@@ -710,7 +714,8 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
 
                           if (!mounted) return;
 
-                          Navigator.push(
+                          AppSettings.hideLoading();
+                          await Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (_) => ExercisePreviewScreen(
@@ -721,7 +726,12 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                               ),
                             ),
                           );
+                          if (mounted) {
+                            setState(() => isLoading = true);
+                            loadProgramStructure();
+                          }
                         } catch (e) {
+                          AppSettings.hideLoading();
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
@@ -730,8 +740,6 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                               ),
                             );
                           }
-                        } finally {
-                          AppSettings.hideLoading();
                         }
                       },
                     ),

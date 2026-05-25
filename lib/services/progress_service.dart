@@ -118,16 +118,20 @@ class ProgressService {
     }
 
     try {
-      await supabase.from('exercise_completions').insert({
-  'user_id': user.id,
-  'program_id': programId,
-  'exercise_id': exerciseId,
-  'week_number': weekNumber,
-  'day_number': dayNumber,
-  'set_index': setIndex,
-  'reps_completed': repsCompleted,
-  'completed_at': DateTime.now().toIso8601String(),
-});
+      await supabase.from('exercise_completions').upsert(
+        {
+          'user_id': user.id,
+          'program_id': programId,
+          'exercise_id': exerciseId,
+          'week_number': weekNumber,
+          'day_number': dayNumber,
+          'set_index': setIndex,
+          'reps_completed': repsCompleted,
+          'completed_at': DateTime.now().toIso8601String(),
+        },
+        onConflict: 'user_id,program_id,exercise_id,week_number,day_number,set_index',
+        ignoreDuplicates: true,
+      );
     } catch (e, stack) {
       developer.log('Error inserting completion log', error: e, stackTrace: stack);
     }
