@@ -164,29 +164,40 @@ class LegionFitnessApp extends StatelessWidget {
 /// ===================== AUTH GATE =======================
 /// =======================================================
 
-class AuthGate extends StatelessWidget {
+class AuthGate extends StatefulWidget {
   final bool hasSeenWelcome;
   const AuthGate({super.key, this.hasSeenWelcome = false});
 
   @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  late bool _isLoggedIn;
+  late final Stream<AuthState> _authStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _isLoggedIn = Supabase.instance.client.auth.currentSession != null;
+    _authStream = Supabase.instance.client.auth.onAuthStateChange;
+    _authStream.listen((event) {
+      final loggedIn = event.session != null;
+      if (loggedIn != _isLoggedIn && mounted) {
+        setState(() => _isLoggedIn = loggedIn);
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return StreamBuilder<AuthState>(
-      stream: Supabase.instance.client.auth.onAuthStateChange,
-      builder: (context, snapshot) {
-        final session = Supabase.instance.client.auth.currentSession;
-
-        // Active session always wins — don't show welcome on a new device
-        if (session != null) {
-          return const MainShell(isGuest: false);
-        }
-
-        if (!hasSeenWelcome) {
-          return const LoginScreen(showSkip: true);
-        }
-
-        return const MainShell(isGuest: true);
-      },
-    );
+    if (_isLoggedIn) {
+      return const MainShell(isGuest: false);
+    }
+    if (!widget.hasSeenWelcome) {
+      return const LoginScreen(showSkip: true);
+    }
+    return const MainShell(isGuest: true);
   }
 }
 
