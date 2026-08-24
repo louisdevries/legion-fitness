@@ -113,12 +113,12 @@ class ProgressService {
   }) async {
     final user = supabase.auth.currentUser;
     if (user == null) {
-      developer.log('No user logged in, cannot log completion.');
+      developer.log('⛔ logExerciseCompletion: no user logged in, cannot log completion.');
       return;
     }
 
     try {
-      await supabase.from('exercise_completions').upsert(
+      final result = await supabase.from('exercise_completions').upsert(
         {
           'user_id': user.id,
           'program_id': programId,
@@ -130,10 +130,11 @@ class ProgressService {
           'completed_at': DateTime.now().toIso8601String(),
         },
         onConflict: 'user_id,program_id,exercise_id,week_number,day_number,set_index',
-        ignoreDuplicates: true,
-      );
+      ).select();
+      developer.log('✅ logExerciseCompletion: upsert returned ${result.length} row(s) for exerciseId=$exerciseId setIndex=$setIndex');
     } catch (e, stack) {
-      developer.log('Error inserting completion log', error: e, stackTrace: stack);
+      developer.log('⛔ logExerciseCompletion: upsert FAILED for exerciseId=$exerciseId setIndex=$setIndex: $e', error: e, stackTrace: stack);
+      rethrow;
     }
   }
 }

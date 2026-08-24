@@ -269,6 +269,11 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
                       DropdownMenuItem(value: 'reps', child: Text("Reps")),
                       DropdownMenuItem(
                           value: 'seconds', child: Text("Seconds")),
+                      DropdownMenuItem(
+                          value: 'time_max',
+                          child: Text("Time (count up)")),
+                      DropdownMenuItem(
+                          value: 'm', child: Text("Complete only")),
                     ],
                     onChanged: (v) => setState(() => state.durationType = v!),
                   ),

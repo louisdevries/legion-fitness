@@ -22,8 +22,8 @@ class WorkoutResultsScreen extends StatelessWidget {
     final m = d.inMinutes;
     final s = d.inSeconds % 60;
     if (m == 0) return '${s}s';
-    if (s == 0) return '${m} min';
-    return '${m} min ${s}s';
+    if (s == 0) return '$m min';
+    return '$m min ${s}s';
   }
 
   @override
@@ -97,7 +97,7 @@ class WorkoutResultsScreen extends StatelessWidget {
                     // ── Exercise list ──────────────────────────────
                     Container(
                       decoration: BoxDecoration(
-                        color: cs.surfaceVariant.withOpacity(0.4),
+                        color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Column(
@@ -108,7 +108,7 @@ class WorkoutResultsScreen extends StatelessWidget {
                                 height: 1,
                                 indent: 16,
                                 endIndent: 16,
-                                color: cs.outlineVariant.withOpacity(0.4),
+                                color: cs.outlineVariant.withValues(alpha: 0.4),
                               ),
                             _ExerciseRow(exercise: exercises[i]),
                           ],
@@ -216,7 +216,7 @@ class _StatChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
       decoration: BoxDecoration(
-        color: cs.primaryContainer.withOpacity(0.5),
+        color: cs.primaryContainer.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -251,7 +251,8 @@ class _ExerciseRow extends StatelessWidget {
     final sets = (exercise['sets'] as int?) ?? 1;
     final durationType =
         (exercise['duration_type'] as String? ?? 'reps').toLowerCase();
-    final isTimed = durationType.contains('second');
+    final isTimed =
+        durationType.contains('second') || durationType.contains('time_max');
     final qty = (exercise['min_quantity'] as int?) ?? 0;
     final setQuantities = exercise['set_quantities'];
 

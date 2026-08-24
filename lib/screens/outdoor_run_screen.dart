@@ -545,7 +545,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                 );
                 if (confirmed == true) {
                   await _deleteSavedRoute(r);
-                  if (mounted && Navigator.canPop(ctx)) Navigator.pop(ctx);
+                  if (ctx.mounted && Navigator.canPop(ctx)) Navigator.pop(ctx);
                 }
               },
             );
@@ -708,8 +708,8 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
       );
     }
 
-    return WillPopScope(
-      onWillPop: () async => !_isLocked,
+    return PopScope(
+      canPop: !_isLocked,
       child: Scaffold(
         appBar: _buildAppBar(),
         body: Stack(
@@ -867,7 +867,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
               TileLayer(
                 urlTemplate:
                 "https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token=$mapboxToken",
-                tileSize: 512,
+                tileDimension: 512,
                 zoomOffset: -1,
               ),
 
@@ -1199,7 +1199,7 @@ class _RoutesSheet extends StatelessWidget {
               child: ListView.separated(
                 controller: scrollController,
                 itemCount: routes.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
+                separatorBuilder: (_, _) => const Divider(height: 1),
                 itemBuilder: (ctx, i) {
                   final r = routes[i];
                   final isSelected = r.id == selectedId;

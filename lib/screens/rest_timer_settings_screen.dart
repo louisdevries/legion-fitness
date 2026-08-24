@@ -70,7 +70,7 @@ class _RestTimerSettingsScreenState extends State<RestTimerSettingsScreen> {
               onPressed: () async {
                 await SettingsService.setRestSeconds(restSeconds);
                 await AppSettings.setMuteTimerSounds(_mute);
-                if (!mounted) return;
+                if (!context.mounted) return;
                 Navigator.pop(context);
               },
               child: const Text("Save"),

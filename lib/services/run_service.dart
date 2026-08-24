@@ -29,7 +29,7 @@ class RunService {
       'distance_meters': distanceMeters,
       'avg_pace_min_per_km': avgPace,
       'route': routeJson,
-      if (routeId != null) 'route_id': routeId,
+      'route_id': ?routeId,
     });
 
     return response;

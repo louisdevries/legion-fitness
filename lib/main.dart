@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'widgets/loading_overlay.dart';
 import 'package:flutter_map/flutter_map.dart';
 
@@ -109,7 +110,7 @@ class LegionFitnessApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: AppSettings.themeMode,
-      builder: (_, themeMode, __) {
+      builder: (_, themeMode, _) {
         return MaterialApp(
           title: 'Legion Fitness',
           debugShowCheckedModeBanner: false,
@@ -218,6 +219,16 @@ class _MainShellState extends State<MainShell> {
 
   bool _isRunMode = false;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!await Permission.ignoreBatteryOptimizations.isGranted) {
+        await Permission.ignoreBatteryOptimizations.request();
+      }
+    });
+  }
+
   final List<String> _titles = const [
     'Home',
     'Programs',
@@ -252,12 +263,6 @@ class _MainShellState extends State<MainShell> {
         : const ProgressScreen(),
     const ProfileScreen(),
   ];
-
-  void _setRunMode(bool value) {
-    setState(() {
-      _isRunMode = value;
-    });
-  }
 
   @override
   Widget build(BuildContext context) {

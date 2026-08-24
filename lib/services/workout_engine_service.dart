@@ -60,13 +60,4 @@ class WorkoutEngineService {
     if (session.totalRequiredSets == 0) return false;
     return session.completedSets >= session.totalRequiredSets - 1;
   }
-
-  // ─────────────────────────────
-  // DEBUG HELPERS (REMOVE LATER IF YOU WANT)
-  // ─────────────────────────────
-
-  void debugPrintState() {
-    print('WorkoutEngineState: '
-        '${session.completedSets}/${session.totalRequiredSets}');
-  }
 }

@@ -49,10 +49,24 @@ class ExerciseRunnerUtils {
     return minQ == maxQ ? '$minQ' : '$minQ-$maxQ';
   }
   /// True when this exercise's countdown should be a stopwatch (any
-  /// duration type containing "second").
+  /// duration type containing "second", plus the count-up "time_max" type).
   static bool isTimedExercise(Map<String, dynamic> exercise) {
     final t = (exercise['duration_type'] ?? '').toString().toLowerCase();
-    return t.contains('sec');
+    return t.contains('sec') || t.contains('time_max');
+  }
+
+  /// True when the timer should count up from 0 instead of counting down
+  /// to 0 (duration_type "time_max").
+  static bool isCountUp(Map<String, dynamic> exercise) {
+    final t = (exercise['duration_type'] ?? '').toString().toLowerCase();
+    return t.contains('time_max');
+  }
+
+  /// True when this exercise has no rep count to enter — the set is just
+  /// marked done with a complete button (duration_type "m").
+  static bool isNoPickReps(Map<String, dynamic> exercise) {
+    final t = (exercise['duration_type'] ?? '').toString().trim().toLowerCase();
+    return t == 'm';
   }
 
   /// True when the exercise must be performed on each side separately

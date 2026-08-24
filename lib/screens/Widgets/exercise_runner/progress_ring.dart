@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 /// Compact horizontal pill timer used during exercises.
 ///
-/// Now bundles its timer adjustment controls (-5s / +5s) inside the pill
-/// instead of having them as a separate row below.
+/// Bundles its timer adjustment controls (-5s / +5s) inside the pill
+/// instead of having them as a separate row below. Count-up (time_max)
+/// exercises hide the adjust controls and the "/ Ns" target label since
+/// there's no fixed target to adjust against.
 class ProgressRing extends StatelessWidget {
   final bool isTimed;
   final bool isResting;
@@ -14,6 +16,12 @@ class ProgressRing extends StatelessWidget {
   final VoidCallback? onTogglePause;
   final VoidCallback? onMinus;
   final VoidCallback? onPlus;
+
+  /// When true, the timer counts up from 0 to [totalSeconds] instead of
+  /// down from [totalSeconds] to 0. Underlying completion mechanics
+  /// (auto-finish, ding, +/-5s adjust) are unchanged — only the displayed
+  /// number and progress bar direction flip.
+  final bool countUp;
 
   const ProgressRing({
     super.key,
@@ -26,10 +34,18 @@ class ProgressRing extends StatelessWidget {
     this.onTogglePause,
     this.onMinus,
     this.onPlus,
+    this.countUp = false,
   });
+
+  int get _displaySeconds =>
+      countUp ? (totalSeconds - remainingSeconds) : remainingSeconds;
 
   double get _progress {
     if (totalSeconds == 0) return 1.0;
+    if (countUp) {
+      return ((totalSeconds - remainingSeconds) / totalSeconds)
+          .clamp(0.0, 1.0);
+    }
     return (remainingSeconds / totalSeconds).clamp(0.0, 1.0);
   }
 
@@ -44,7 +60,7 @@ class ProgressRing extends StatelessWidget {
         : (isResting ? Colors.green : cs.primary);
 
     final canPause = showTime && onTogglePause != null;
-    final canAdjust = showTime && onMinus != null && onPlus != null;
+    final canAdjust = showTime && onMinus != null && onPlus != null && !countUp;
 
     return Container(
       width: double.infinity,
@@ -88,7 +104,7 @@ class ProgressRing extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          showTime ? '$remainingSeconds' : quantityDisplay,
+                          showTime ? '$_displaySeconds' : quantityDisplay,
                           style: TextStyle(
                             fontSize: showTime
                                 ? 36
@@ -99,7 +115,7 @@ class ProgressRing extends StatelessWidget {
                             fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
-                        if (showTime && totalSeconds > 0) ...[
+                        if (showTime && totalSeconds > 0 && !countUp) ...[
                           const SizedBox(width: 6),
                           Padding(
                             padding: const EdgeInsets.only(bottom: 4),

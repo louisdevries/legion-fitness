@@ -41,9 +41,9 @@ class ExerciseMedia extends StatelessWidget {
         fit: fit,
         width: double.infinity,
         height: double.infinity,
-        placeholder: (_, __) =>
+        placeholder: (_, _) =>
             const Center(child: CircularProgressIndicator()),
-        errorWidget: (_, __, ___) => _placeholder(),
+        errorWidget: (_, _, _) => _placeholder(),
       );
     } else {
       content = _placeholder();

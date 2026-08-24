@@ -50,7 +50,8 @@ class LocationService {
 
     // Return real GPS location
     final pos = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.bestForNavigation,
+      locationSettings:
+          const LocationSettings(accuracy: LocationAccuracy.bestForNavigation),
     );
     return LatLng(pos.latitude, pos.longitude);
   }

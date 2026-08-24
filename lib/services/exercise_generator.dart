@@ -14,8 +14,10 @@ class ExerciseGenerator {
 
     developer.log("Generating Week $targetWeek Day $targetDay");
 
-    // Fetch week 1 template
-    final week1Data = await supabase
+    // Try the target week first (for programs that define each week
+    // explicitly, e.g. Greek Warrior). If nothing found, fall back to
+    // week 1 as the template (for programs using auto-progression).
+    List week1Data = await supabase
         .from('program_exercises')
         .select('''
           *,
@@ -28,12 +30,34 @@ class ExerciseGenerator {
           )
         ''')
         .eq('program_id', programId)
-        .eq('week_number', 1)
+        .eq('week_number', targetWeek)
         .eq('day_number', targetDay)
         .order('id');
 
-    if ((week1Data as List).isEmpty) {
-      throw Exception('No template exercises found for day $targetDay');
+    // Track this so we know whether to auto-progress reps below.
+    final usingExplicitWeek = week1Data.isNotEmpty;
+
+    if (!usingExplicitWeek) {
+      week1Data = await supabase
+          .from('program_exercises')
+          .select('''
+            *,
+            exercises (
+              id, name, media_url, coaching_cues,
+              exercise_category_association!exercise_category_association_exercise_id_fkey(
+                category_id,
+                exercise_categories!exercise_category_association_category_id_fkey(id, name)
+              )
+            )
+          ''')
+          .eq('program_id', programId)
+          .eq('week_number', 1)
+          .eq('day_number', targetDay)
+          .order('id');
+
+      if (week1Data.isEmpty) {
+        throw Exception('No template exercises found for day $targetDay');
+      }
     }
 
     // Fetch previous week completions for main exercises
@@ -93,11 +117,16 @@ class ExerciseGenerator {
       // ── Progressive overload for main exercise ───────────────────
       final baseSetQty = detail.resolvedSetQuantities();
       final prevSets = previousPerformance[exerciseId] ?? {};
-      final progressedSetQty = _progressSets(
-        sets: sets,
-        baseQuantities: baseSetQty,
-        previousBySetIndex: prevSets,
-      );
+      // Only auto-progress when we're inferring from a week 1 template.
+      // Programs that define each week explicitly (Greek Warrior) get
+      // the exact prescribed values.
+      final progressedSetQty = usingExplicitWeek
+          ? baseSetQty
+          : _progressSets(
+              sets: sets,
+              baseQuantities: baseSetQty,
+              previousBySetIndex: prevSets,
+            );
       developer.log(
           "  Exercise $exerciseId: base=$baseSetQty -> progressed=$progressedSetQty");
 
@@ -122,11 +151,13 @@ class ExerciseGenerator {
         final baseSupersetQty = detail.resolvedSupersetSetQuantities();
         final prevSupersetSets =
             previousPerformance[detail.supersetExerciseId!] ?? {};
-        final progressedSupersetQty = _progressSets(
-          sets: sets,
-          baseQuantities: baseSupersetQty,
-          previousBySetIndex: prevSupersetSets,
-        );
+        final progressedSupersetQty = usingExplicitWeek
+            ? baseSupersetQty
+            : _progressSets(
+                sets: sets,
+                baseQuantities: baseSupersetQty,
+                previousBySetIndex: prevSupersetSets,
+              );
         developer.log(
             "  Superset partner ${detail.supersetExerciseId}: base=$baseSupersetQty -> progressed=$progressedSupersetQty");
 

@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/programs.dart';
 
@@ -24,8 +25,7 @@ Future<List<Program>> fetchPrograms() async {
     final data = await query as List<dynamic>;
     return data.map((p) => Program.fromMap(p as Map<String, dynamic>)).toList();
   } catch (e, st) {
-    print("Error fetching programs: $e");
-    print(st);
+    developer.log("Error fetching programs: $e", error: e, stackTrace: st);
     return [];
   }
 }

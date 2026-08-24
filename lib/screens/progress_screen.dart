@@ -13,7 +13,6 @@ import '../models/programs.dart';
 import '../services/progress_service.dart';
 import '../services/exercise_service.dart';
 import 'photo_compare_screen.dart';
-import 'progress_report_screen.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 class ProgressScreen extends StatefulWidget {
@@ -410,9 +409,6 @@ class _ProgressScreenState extends State<ProgressScreen>
       return const Center(child: Text('No data yet'));
     }
 
-    final sortedWeights = [...weightLogs]
-      ..sort((a, b) => a.date.compareTo(b.date));
-
     return SingleChildScrollView(
       child: Column(
         children: [
@@ -574,8 +570,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                 show: true,
                 gradient: LinearGradient(
                   colors: [
-                    const Color(0xFF6C63FF).withOpacity(0.3),
-                    const Color(0xFF00C9A7).withOpacity(0.05),
+                    const Color(0xFF6C63FF).withValues(alpha: 0.3),
+                    const Color(0xFF00C9A7).withValues(alpha: 0.05),
                   ],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
@@ -691,7 +687,7 @@ class _ProgressScreenState extends State<ProgressScreen>
           boxShadow: [
             BoxShadow(
               color: (lost ? Colors.greenAccent : Colors.orangeAccent)
-                  .withOpacity(0.5),
+                  .withValues(alpha: 0.5),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -914,7 +910,7 @@ class _ProgressScreenState extends State<ProgressScreen>
           if (isSelected)
             Positioned.fill(
               child: Container(
-                color: Colors.blue.withOpacity(0.4),
+                color: Colors.blue.withValues(alpha: 0.4),
                 child: const Icon(Icons.compare_arrows,
                     color: Colors.white, size: 32),
               ),
@@ -1097,7 +1093,7 @@ class _ProgressScreenState extends State<ProgressScreen>
             Image.network(
               program.imageUrl,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(color: Colors.grey[800]),
+              errorBuilder: (_, _, _) => Container(color: Colors.grey[800]),
             ),
 
           // Dark overlay so text is readable
@@ -1105,8 +1101,8 @@ class _ProgressScreenState extends State<ProgressScreen>
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.black.withOpacity(0.65),
-                  Colors.black.withOpacity(0.35),
+                  Colors.black.withValues(alpha: 0.65),
+                  Colors.black.withValues(alpha: 0.35),
                 ],
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
@@ -1150,7 +1146,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.2),
+        color: Colors.white.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white30),
       ),

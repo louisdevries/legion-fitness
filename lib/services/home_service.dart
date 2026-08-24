@@ -1,8 +1,8 @@
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/home_state.dart';
 import 'dart:developer' as developer;
 import '../utils/user_prefs.dart';
+import 'program_completion_service.dart';
 
 class HomeService {
   final supabase = Supabase.instance.client;
@@ -54,288 +54,44 @@ class HomeService {
         return _ProgressData();
       }
 
-      final allExercisesData = await supabase
-          .from('program_exercises')
-          .select('id, week_number, day_number')
-          .eq('program_id', programId)
-          .order('week_number', ascending: true)
-          .order('day_number', ascending: true);
+      final completion = await ProgramCompletionService.load(programId);
 
-      if ((allExercisesData as List).isEmpty) {
-        developer.log("No exercises found for program $programId");
-        return _ProgressData();
+      // Completed days for the current calendar week (Mon-Sun strip).
+      final now = DateTime.now();
+      final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+      final Map<int, bool> completedDays = {};
+      for (int i = 1; i <= 7; i++) {
+        final dayDate = startOfWeek.add(Duration(days: i - 1));
+        final dateStr = dayDate.toIso8601String().substring(0, 10);
+        if (completion.workoutDates.contains(dateStr)) completedDays[i] = true;
       }
 
-      final allExercises = (allExercisesData)
-          .map((e) => {
-        'id': e['id'],
-        'week': (e['week_number'] as num).toInt(),
-        'day': (e['day_number'] as num).toInt(),
-      })
-          .toList();
+      final totalExpectedWorkoutSessions =
+          completion.totalWeeks * completion.daysPerWeek;
+      final completedWorkoutSessions = completion.completedDaysByWeek.values
+          .fold<int>(0, (sum, days) => sum + days.length);
+      final programProgress = totalExpectedWorkoutSessions > 0
+          ? (completedWorkoutSessions / totalExpectedWorkoutSessions)
+              .clamp(0.0, 1.0)
+          : 0.0;
 
-      final exerciseDistribution = _getExerciseDistribution(allExercises);
-      developer.log("Exercise distribution by week/day: $exerciseDistribution");
-
-      final exercisesByDay = _groupExercisesByDay(allExercises);
-
-      final completedLogsData = await supabase
-          .from('exercise_completions')
-          .select('week_number, day_number, exercise_id, completed_at')
-          .eq('user_id', user.id)
-          .eq('program_id', programId);
-
-      final completionData = _analyzeCompletionData(
-        completedLogsData as List,
-        exercisesByDay,
-      );
-
-      final nextWorkout = await _findNextWorkout(
-        exercisesByDay: exercisesByDay,
-        completedCountByDay: completionData.countByDay,
-        programId: programId,
-      );
-
-      final progressMetrics = await _calculateProgress(
-        programId: programId,
-        exercisesByDay: exercisesByDay,
-        completedCountByDay: completionData.countByDay,
-        completedWorkoutsByWeek: completionData.completedByWeek,
-        currentWeek: nextWorkout.week ?? 1,
-        workoutDates: completionData.workoutDates,
-      );
+      // When the program is fully complete, nextWeek is null — fall back
+      // to the last week for display purposes.
+      final currentWeek = completion.nextWeek ?? completion.totalWeeks;
 
       return _ProgressData(
-        currentWeek: progressMetrics.currentWeek,
-        nextWeek: nextWorkout.week,
-        nextDay: nextWorkout.day,
-        completedDays: progressMetrics.completedDays,
-        completedWorkoutDates: completionData.workoutDates,
-        programProgress: progressMetrics.programProgress,
-        weekProgress: progressMetrics.weekProgress,
+        currentWeek: currentWeek,
+        nextWeek: completion.nextWeek,
+        nextDay: completion.nextDay,
+        completedDays: completedDays,
+        completedWorkoutDates: completion.workoutDates,
+        programProgress: programProgress,
+        weekProgress: completedDays.length / 7.0,
       );
     } catch (e, stack) {
       developer.log("ERROR in _loadProgress", error: e, stackTrace: stack);
       return _ProgressData();
     }
-  }
-
-  Map<String, List<Map<String, dynamic>>> _groupExercisesByDay(
-      List<Map<String, dynamic>> exercises) {
-    final Map<String, List<Map<String, dynamic>>> grouped = {};
-    for (final e in exercises) {
-      final key = "${e['week']}-${e['day']}";
-      grouped.putIfAbsent(key, () => []).add(e);
-    }
-    return grouped;
-  }
-
-  Map<int, Map<int, int>> _getExerciseDistribution(
-      List<Map<String, dynamic>> exercises) {
-    final Map<int, Map<int, int>> distribution = {};
-    for (final e in exercises) {
-      final week = e['week'] as int;
-      final day = e['day'] as int;
-      distribution.putIfAbsent(week, () => {});
-      distribution[week]![day] = (distribution[week]![day] ?? 0) + 1;
-    }
-    return distribution;
-  }
-
-  _CompletionData _analyzeCompletionData(
-      List logs,
-      Map<String, List<Map<String, dynamic>>> exercisesByDay,
-      ) {
-    final Map<String, Set<int>> completedExercisesByDay = {};
-
-    for (final log in logs) {
-      final week = (log['week_number'] as num?)?.toInt();
-      final day = (log['day_number'] as num?)?.toInt();
-      final exerciseId = (log['exercise_id'] as num?)?.toInt();
-      if (week == null || day == null || exerciseId == null) continue;
-      final key = "$week-$day";
-      completedExercisesByDay.putIfAbsent(key, () => <int>{}).add(exerciseId);
-    }
-
-    final Map<String, int> countByDay = {
-      for (final e in completedExercisesByDay.entries) e.key: e.value.length
-    };
-
-    final Map<int, Set<int>> completedByWeek = {};
-
-    // Week 1: use program_exercises as source of truth for required count.
-    countByDay.forEach((key, completedCount) {
-      final exercises = exercisesByDay[key];
-      final total = exercises?.length ?? 0;
-      if (total > 0 && completedCount >= total) {
-        final parts = key.split('-');
-        final week = int.parse(parts[0]);
-        final day = int.parse(parts[1]);
-        completedByWeek.putIfAbsent(week, () => {}).add(day);
-      }
-    });
-
-    // Weeks 2+: exercises are generated, not stored in program_exercises.
-    // Use week 1's required count as reference.
-    for (final key in countByDay.keys) {
-      final parts = key.split('-');
-      final week = int.parse(parts[0]);
-      final day = int.parse(parts[1]);
-      if (week <= 1) continue;
-      final required = exercisesByDay['1-$day']?.length ?? 0;
-      if (required > 0 && countByDay[key]! >= required) {
-        completedByWeek.putIfAbsent(week, () => {}).add(day);
-      }
-    }
-
-    // Only mark a calendar date as a workout day if a full program day was
-    // completed on it. Partial sessions (user quit early) are excluded.
-    final Set<String> workoutDates = {};
-    for (final log in logs) {
-      final week = (log['week_number'] as num?)?.toInt();
-      final day = (log['day_number'] as num?)?.toInt();
-      if (week == null || day == null) continue;
-      if (completedByWeek[week]?.contains(day) == true) {
-        if (log['completed_at'] != null) {
-          final date = DateTime.parse(log['completed_at']);
-          workoutDates.add(date.toIso8601String().substring(0, 10));
-        }
-      }
-    }
-
-    return _CompletionData(
-      countByDay: countByDay,
-      firstCompletionByDay: {},
-      workoutDates: workoutDates,
-      completedByWeek: completedByWeek,
-    );
-  }
-
-  Future<_NextWorkout> _findNextWorkout({
-    required Map<String, List<Map<String, dynamic>>> exercisesByDay,
-    required Map<String, int> completedCountByDay,
-    required int programId,
-  }) async {
-    int? nextWeek;
-    int? nextDay;
-
-    final sortedKeys = exercisesByDay.keys.toList()
-      ..sort((a, b) {
-        final aParts = a.split('-').map(int.parse).toList();
-        final bParts = b.split('-').map(int.parse).toList();
-        if (aParts[0] != bParts[0]) return aParts[0] - bParts[0];
-        return aParts[1] - bParts[1];
-      });
-
-    for (final key in sortedKeys) {
-      final exercises = exercisesByDay[key]!;
-      final completed = completedCountByDay[key] ?? 0;
-      final isComplete = completed >= exercises.length;
-
-      if (!isComplete) {
-        final parts = key.split('-');
-        nextWeek = int.parse(parts[0]);
-        nextDay = int.parse(parts[1]);
-        break;
-      }
-    }
-
-    if (nextWeek == null) {
-      final programData = await supabase
-          .from('fitness_programs')
-          .select('weeks')
-          .eq('id', programId)
-          .maybeSingle();
-
-      final totalWeeks = programData?['weeks'] as int? ?? 6;
-      final daysPerWeek =
-          exercisesByDay.keys.where((k) => k.startsWith('1-')).length;
-
-      // Weeks 2+ exercises are generated progressively and are not stored in
-      // program_exercises, so use week 1's exercise count as the required
-      // threshold. Scan forward and return the first day that is not fully
-      // complete (unique completions < required exercises for that day).
-      outer:
-      for (int week = 2; week <= totalWeeks; week++) {
-        for (int day = 1; day <= daysPerWeek; day++) {
-          final key = '$week-$day';
-          final completed = completedCountByDay[key] ?? 0;
-          final required = exercisesByDay['1-$day']?.length ?? 0;
-          if (required == 0) continue;
-          if (completed < required) {
-            nextWeek = week;
-            nextDay = day;
-            break outer;
-          }
-        }
-      }
-    }
-
-    return _NextWorkout(week: nextWeek, day: nextDay);
-  }
-
-  Future<_ProgressMetrics> _calculateProgress({
-    required int programId,
-    required Map<String, List<Map<String, dynamic>>> exercisesByDay,
-    required Map<String, int> completedCountByDay,
-    required Map<int, Set<int>> completedWorkoutsByWeek,
-    required int currentWeek,
-    required Set<String> workoutDates,
-  }) async {
-    final programData = await supabase
-        .from('fitness_programs')
-        .select('weeks')
-        .eq('id', programId)
-        .maybeSingle();
-
-    final totalWeeks = programData?['weeks'] as int? ?? 6;
-    final daysPerWeek =
-        exercisesByDay.keys.where((k) => k.startsWith('1-')).length;
-    final totalExpectedWorkoutSessions = totalWeeks * daysPerWeek;
-
-    final Set<String> completedSessions = {};
-    for (final weekEntry in completedWorkoutsByWeek.entries) {
-      final week = weekEntry.key;
-      for (final day in weekEntry.value) {
-        completedSessions.add("$week-$day");
-      }
-    }
-
-    int completedWorkoutSessions = completedSessions.length;
-
-    for (int week = 2; week <= totalWeeks; week++) {
-      for (int day = 1; day <= daysPerWeek; day++) {
-        final key = '$week-$day';
-        final completed = completedCountByDay[key] ?? 0;
-        final isAlreadyCounted =
-            completedWorkoutsByWeek[week]?.contains(day) ?? false;
-        if (completed > 0 && !isAlreadyCounted) {
-          final week1DayKey = '1-$day';
-          final week1DayExercises = exercisesByDay[week1DayKey]?.length ?? 10;
-          if (completed >= week1DayExercises) completedWorkoutSessions++;
-        }
-      }
-    }
-
-    final programProgress = totalExpectedWorkoutSessions > 0
-        ? completedWorkoutSessions / totalExpectedWorkoutSessions
-        : 0.0;
-
-    final now = DateTime.now();
-    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-    final Map<int, bool> completedDays = {};
-    for (int i = 1; i <= 7; i++) {
-      final dayDate = startOfWeek.add(Duration(days: i - 1));
-      final dateStr = dayDate.toIso8601String().substring(0, 10);
-      if (workoutDates.contains(dateStr)) completedDays[i] = true;
-    }
-
-    return _ProgressMetrics(
-      currentWeek: currentWeek,
-      completedDays: completedDays,
-      programProgress: programProgress,
-      weekProgress: completedDays.length / 7.0,
-    );
   }
 
   // ── Fetch alternative exercise data ─────────────────────────────
@@ -607,7 +363,6 @@ class ProgramExerciseDetailInline {
   }
 }
 
-// ── Private data classes (unchanged) ────────────────────────────
 class _ProgressData {
   final int currentWeek;
   final int? nextWeek;
@@ -625,39 +380,5 @@ class _ProgressData {
     this.completedWorkoutDates = const {},
     this.programProgress = 0.0,
     this.weekProgress = 0.0,
-  });
-}
-
-class _CompletionData {
-  final Map<String, int> countByDay;
-  final Map<String, DateTime> firstCompletionByDay;
-  final Set<String> workoutDates;
-  final Map<int, Set<int>> completedByWeek;
-
-  _CompletionData({
-    required this.countByDay,
-    required this.firstCompletionByDay,
-    required this.workoutDates,
-    required this.completedByWeek,
-  });
-}
-
-class _NextWorkout {
-  final int? week;
-  final int? day;
-  _NextWorkout({this.week, this.day});
-}
-
-class _ProgressMetrics {
-  final int currentWeek;
-  final Map<int, bool> completedDays;
-  final double programProgress;
-  final double weekProgress;
-
-  _ProgressMetrics({
-    required this.currentWeek,
-    required this.completedDays,
-    required this.programProgress,
-    required this.weekProgress,
   });
 }

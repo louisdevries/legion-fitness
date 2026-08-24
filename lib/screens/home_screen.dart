@@ -252,6 +252,7 @@ class _HomeScreenState extends State<HomeScreen>
         final shouldResume = await _showResumeDialog();
         if (shouldResume == null) return;
         if (shouldResume) {
+          if (!mounted) return;
           await Navigator.push(context, MaterialPageRoute(
             builder: (_) => ExerciseRunnerScreen(
               exercises: const [],

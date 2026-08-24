@@ -7,7 +7,7 @@ part 'exercise_logs_dao.g.dart';
 @DriftAccessor(tables: [ExerciseLogs])
 class ExerciseLogsDao extends DatabaseAccessor<AppDatabase>
     with _$ExerciseLogsDaoMixin {
-  ExerciseLogsDao(AppDatabase db) : super(db);
+  ExerciseLogsDao(super.db);
 
   Future<void> insertLog(ExerciseLogsCompanion entry) {
     return into(exerciseLogs).insert(entry);

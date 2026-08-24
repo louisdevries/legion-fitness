@@ -6,7 +6,6 @@ import '../models/exercise_runner_state.dart';
 import '../services/exercise_runner_service.dart';
 import '../utils/exercise_category_utils.dart';
 import '../utils/exercise_runner_utils.dart';
-import 'Widgets/exercise_runner/category_badge.dart';
 import 'Widgets/exercise_runner/coaching_cue_box.dart';
 import 'Widgets/exercise_runner/exercise_media.dart';
 import 'Widgets/exercise_runner/progress_ring.dart';
@@ -55,7 +54,10 @@ class NextExercisePreview extends StatelessWidget {
     final minQ = exercise['min_quantity'] ?? 0;
     final durationType =
     (exercise['duration_type'] ?? 'reps').toString().toLowerCase();
-    final unit = durationType.contains('second') ? 'sec' : 'reps';
+    final unit =
+        (durationType.contains('second') || durationType.contains('time_max'))
+            ? 'sec'
+            : 'reps';
 
     final isUntilFailure = durationType.contains('failure');
     String quantity;
@@ -179,6 +181,11 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
   bool get _isEachSide =>
       ExerciseRunnerUtils.isEachSide(_activeExercise);
 
+  bool get _isCountUp => ExerciseRunnerUtils.isCountUp(_activeExercise);
+
+  bool get _isNoPickReps =>
+      !_isTimed && ExerciseRunnerUtils.isNoPickReps(_activeExercise);
+
   String get _category =>
       ExerciseCategoryUtils.resolveCategory(_currentExercise);
   String get _resumeKey => 'active_session';
@@ -192,23 +199,6 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
       return (setQuantities[_s.currentSet - 1] as num).toInt();
     }
     return exercise['min_quantity'] as int? ?? 10;
-  }
-
-  String get _appBarTitle {
-    if (_s.isResting) return 'Rest';
-    if (_isSuperset) {
-      final primaryName = ExerciseRunnerUtils.getName(_currentExercise);
-      final partnerName = ExerciseRunnerUtils.getName(_supersetPartner!);
-      return '$primaryName + $partnerName';
-    }
-    return ExerciseRunnerUtils.getName(_activeExercise);
-  }
-
-  bool _isNewCategory() {
-    if (_s.currentIndex == 0) return true;
-    final prev =
-    ExerciseRunnerUtils.resolveCategory(exercises[_s.currentIndex - 1]);
-    return prev != _category;
   }
 
   String _getCategoryLabel(String category) {
@@ -439,13 +429,18 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
       onSecondSide: _s.onSecondSide,
     );
     await _saveState();
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
 
     await _svc.precacheMedia(
         ExerciseRunnerUtils.getMediaUrl(_activeExercise), context);
 
     if (_isTimed) {
-      final secs = ExerciseRunnerUtils.getQuantity(_activeExercise);
+      // Count-up ("time_max") exercises count toward the max, not the
+      // midpoint of min/max — the target IS the max value.
+      final secs = _isCountUp
+          ? max(1, ExerciseRunnerUtils.getMaxQuantity(_activeExercise))
+          : ExerciseRunnerUtils.getQuantity(_activeExercise);
       _s = _s.copyWith(
         mediaReady: true,
         lastSelectedSeconds: secs,
@@ -472,14 +467,16 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
         return;
       }
       if (_s.isPaused) return;
-      if (_s.remainingSeconds <= 1) {
+      // Count-up ("time_max") exercises have no target to auto-finish at —
+      // they run until the user taps "Finish Set".
+      if (!_isCountUp && _s.remainingSeconds <= 1) {
         t.cancel();
         await _svc.playDing();
         await _completeSet(logSet: true);
       } else {
         setState(
                 () => _s = _s.copyWith(remainingSeconds: _s.remainingSeconds - 1));
-        if (_s.remainingSeconds <= 5) await _svc.playTick();
+        if (!_isCountUp && _s.remainingSeconds <= 5) await _svc.playTick();
       }
     });
   }
@@ -489,6 +486,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     _timer?.cancel();
     _s = _s.copyWith(
       isResting: true,
+      isPaused: false,
       onSupersetPartner: false,
       remainingSeconds: widget.restSeconds,
       totalSeconds: widget.restSeconds,
@@ -574,6 +572,10 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
         // Timed: log the duration (already done — no picker needed).
         secondsLogged = _s.totalSeconds;
         repsLogged = 0;
+      } else if (_isNoPickReps) {
+        // "m" duration type: no rep count to enter — just log the
+        // prescribed amount, no picker shown.
+        repsLogged = _prescribedRepsForCurrentSet;
       } else {
         // Rep-based: ask the user how many they did.
         final prescribed = _prescribedRepsForCurrentSet;
@@ -757,8 +759,14 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
   // ── Build ────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: _confirmExit,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (await _confirmExit()) {
+          if (context.mounted) Navigator.pop(context);
+        }
+      },
       child: Scaffold(
         appBar: AppBar(
           title: Text(
@@ -778,7 +786,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
             icon: const Icon(Icons.arrow_back),
             onPressed: () async {
               if (await _confirmExit()) {
-                if (mounted) Navigator.pop(context);
+                if (context.mounted) Navigator.pop(context);
               }
             },
           ),
@@ -924,6 +932,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
               remainingSeconds: _s.remainingSeconds,
               totalSeconds: _s.totalSeconds,
               quantityDisplay: quantityDisplay,
+              countUp: _isCountUp,
               onTogglePause: _isTimed ? _togglePause : null,
               onMinus: _isTimed ? () => _adjustTimer(-5) : null,
               onPlus: _isTimed ? () => _adjustTimer(5) : null,
@@ -1081,6 +1090,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
                     remainingSeconds: _s.remainingSeconds,
                     totalSeconds: _s.totalSeconds,
                     quantityDisplay: quantityDisplay,
+                    countUp: _isCountUp,
                     onTogglePause: _isTimed ? _togglePause : null,
                     onMinus: _isTimed ? () => _adjustTimer(-5) : null,
                     onPlus: _isTimed ? () => _adjustTimer(5) : null,

@@ -21,9 +21,6 @@ class LocalWorkoutService {
     required int repsCompleted,
     double? weightUsedKg,
   }) async {
-    // Remove after confirming fix
-    print('💾 logSet: exerciseId=${exercise['exercise_id']} setIndex=$setIndex reps=$repsCompleted');
-
     final now = DateTime.now();
     await _db.into(_db.exerciseLogs).insert(
       ExerciseLogsCompanion(

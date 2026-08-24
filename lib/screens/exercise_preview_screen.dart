@@ -158,14 +158,16 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
     final durationType =
     (ex['duration_type'] as String? ?? 'reps').toLowerCase();
 
+    final isTimeUnit =
+        durationType.contains('second') || durationType.contains('time_max');
     final String quantityLabel;
     if (durationType == 'until failure') {
       quantityLabel = '$sets sets × until failure';
     } else if (minQ == maxQ) {
-      final unit = durationType.contains('second') ? 'sec' : 'reps';
+      final unit = isTimeUnit ? 'sec' : 'reps';
       quantityLabel = '$sets sets × $minQ $unit';
     } else {
-      final unit = durationType.contains('second') ? 'sec' : 'reps';
+      final unit = isTimeUnit ? 'sec' : 'reps';
       quantityLabel = '$sets sets × $minQ–$maxQ $unit';
     }
 

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/program_exercise_service.dart';
-import '../services/workout_engine_service.dart';
+import '../services/program_completion_service.dart';
 import 'exercise_preview_screen.dart';
 import 'exercise_runner_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -256,7 +256,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                                       width: 60,
                                       height: 60,
                                       fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => Container(
+                                      errorBuilder: (_, _, _) => Container(
                                         width: 60,
                                         height: 60,
                                         color: Colors.grey[300],
@@ -326,71 +326,12 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
             .eq('program_id', widget.programId),
       );
 
-      final userId = supabase.auth.currentUser?.id;
+      final completion = await ProgramCompletionService.load(widget.programId);
+      completedDaysByWeek
+        ..clear()
+        ..addAll(completion.completedDaysByWeek);
+      highestUnlockedWeek = completion.highestUnlockedWeek;
 
-      completedDaysByWeek.clear();
-
-      if (userId != null) {
-        // -----------------------------
-        // STEP 1: REQUIRED EXERCISES PER DAY
-        // -----------------------------
-        final programExercises = await supabase
-            .from('program_exercises')
-            .select('week_number, day_number, exercise_id')
-            .eq('program_id', widget.programId);
-
-        final Map<String, Set<int>> requiredExercisesByDay = {};
-        for (final pe in programExercises) {
-          final key = '${pe['week_number']}-${pe['day_number']}';
-          requiredExercisesByDay.putIfAbsent(key, () => <int>{});
-          requiredExercisesByDay[key]!.add(pe['exercise_id'] as int);
-        }
-
-        // -----------------------------
-        // STEP 2: COMPLETED EXERCISES PER DAY
-        // -----------------------------
-        final completionLogs = await supabase
-            .from('exercise_completions')
-            .select('week_number, day_number, exercise_id')
-            .eq('program_id', widget.programId)
-            .eq('user_id', userId);
-
-        final Map<String, Set<int>> completedExercisesByDay = {};
-        for (final log in completionLogs) {
-          final key = '${log['week_number']}-${log['day_number']}';
-          completedExercisesByDay.putIfAbsent(key, () => <int>{});
-          completedExercisesByDay[key]!.add(log['exercise_id'] as int);
-        }
-
-        // -----------------------------
-        // STEP 3: MARK DAY COMPLETE WHEN ALL EXERCISES DONE
-        // -----------------------------
-        requiredExercisesByDay.forEach((key, required) {
-          final completed = completedExercisesByDay[key] ?? <int>{};
-          if (completed.length >= required.length) {
-            final parts = key.split('-');
-            final week = int.parse(parts[0]);
-            final day = int.parse(parts[1]);
-            completedDaysByWeek.putIfAbsent(week, () => {}).add(day);
-          }
-        });
-
-        final week1Entries = requiredExercisesByDay.entries
-            .where((e) => e.key.startsWith('1-'))
-            .toList();
-        for (int week = 2; week <= totalWeeks; week++) {
-          for (final entry in week1Entries) {
-            final day = int.parse(entry.key.split('-')[1]);
-            final key = '$week-$day';
-            final completed = completedExercisesByDay[key] ?? <int>{};
-            if (completed.length >= entry.value.length) {
-              completedDaysByWeek.putIfAbsent(week, () => {}).add(day);
-            }
-          }
-        }
-      }
-
-      highestUnlockedWeek = _computeHighestUnlockedWeek(totalWeeks);
       selectedWeek = 1;
       computeDays();
     } finally {
@@ -405,29 +346,6 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
         .toSet()
         .toList()
       ..sort();
-  }
-
-  int _computeHighestUnlockedWeek(int totalWeeks) {
-    // Always use week 1's day structure as reference, because weeks 2+ are
-    // generated and have no rows in program_exercises. Without this, empty
-    // weekDays.every(...) would be vacuously true and unlock all weeks.
-    final week1Days = rows
-        .where((r) => r['week_number'] == 1)
-        .map((r) => r['day_number'] as int)
-        .toSet();
-
-    if (week1Days.isEmpty) return 1;
-
-    int unlocked = 1;
-    for (int week = 1; week <= totalWeeks; week++) {
-      final completed = completedDaysByWeek[week] ?? {};
-      if (week1Days.every(completed.contains)) {
-        unlocked = week + 1;
-      } else {
-        break;
-      }
-    }
-    return unlocked.clamp(1, totalWeeks);
   }
 
   bool isDayLocked(int day) {
@@ -593,7 +511,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                       child: Container(
                         decoration: BoxDecoration(
                           color: locked
-                              ? cs.surfaceVariant
+                              ? cs.surfaceContainerHighest
                               : selected
                               ? cs.primaryContainer
                               : cs.surface,
@@ -622,7 +540,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                     margin: const EdgeInsets.only(bottom: 12),
                     decoration: BoxDecoration(
                       color: locked
-                          ? cs.surfaceVariant
+                          ? cs.surfaceContainerHighest
                           : completed
                           ? cs.secondaryContainer
                           : cs.surface,
@@ -653,7 +571,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                           } catch (_) {}
                         }
 
-                        if (hasSession && mounted) {
+                        if (hasSession && context.mounted) {
                           final choice = await showDialog<String>(
                             context: context,
                             builder: (ctx) => AlertDialog(
@@ -675,7 +593,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                             ),
                           );
 
-                          if (!mounted) return;
+                          if (!context.mounted) return;
 
                           if (choice == 'resume') {
                             await Navigator.push(
@@ -712,7 +630,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                             dayNumber: day,
                           );
 
-                          if (!mounted) return;
+                          if (!context.mounted) return;
 
                           AppSettings.hideLoading();
                           await Navigator.push(
@@ -732,7 +650,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                           }
                         } catch (e) {
                           AppSettings.hideLoading();
-                          if (mounted) {
+                          if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text("Failed to load workout: $e"),
