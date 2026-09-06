@@ -6,6 +6,8 @@ import 'exercise_preview_screen.dart';
 import '../models/home_state.dart';
 import '../services/home_service.dart';
 import '../services/exercise_generator.dart';
+import '../services/cardio_day_service.dart';
+import 'cardio_day_screen.dart';
 import 'custom_exercise_screen.dart';
 import 'premium_program_screen.dart';
 import '../main.dart'; // AppSettings
@@ -232,6 +234,28 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _navigateToWorkout() async {
     if (_state.nextWeek == null || _state.nextDay == null) return;
+
+    // Cardio days have no exercises to run — route to the cardio screen
+    // instead of the workout preview/runner flow below.
+    final programDays =
+        await CardioDayService.fetchProgramDays(_state.programId!);
+    final programDay = programDays['${_state.nextWeek}-${_state.nextDay}'] ??
+        programDays['1-${_state.nextDay}'];
+    if (programDay?.isCardio == true) {
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CardioDayScreen(
+            programId: _state.programId!,
+            weekNumber: _state.nextWeek!,
+            dayNumber: _state.nextDay!,
+          ),
+        ),
+      );
+      if (mounted) _loadHomeData();
+      return;
+    }
 
     final prefs = await SharedPreferences.getInstance();
     final savedJson = prefs.getString('active_session');
@@ -735,7 +759,14 @@ class _HomeScreenState extends State<HomeScreen>
           fit: StackFit.expand,
           children: [
             if (_state.programImage != null)
-              Image.network(_state.programImage!, fit: BoxFit.cover)
+              Image.network(
+                _state.programImage!,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stack) => Container(
+                  color: Colors.grey.shade300,
+                  child: const Icon(Icons.image, size: 50),
+                ),
+              )
             else
               Container(color: Colors.grey.shade800),
             Container(

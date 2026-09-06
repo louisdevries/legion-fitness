@@ -3,6 +3,7 @@ import '../models/home_state.dart';
 import 'dart:developer' as developer;
 import '../utils/user_prefs.dart';
 import 'program_completion_service.dart';
+import '../utils/rep_scheme_utils.dart';
 
 class HomeService {
   final supabase = Supabase.instance.client;
@@ -124,7 +125,11 @@ class HomeService {
       'min_quantity': minQ,
       'max_quantity': maxQ,
       'duration_type': durationType,
-      'set_quantities': null,
+      'set_quantities': RepSchemeUtils.evenlySpaced(
+        sets: sets,
+        minQuantity: minQ,
+        maxQuantity: maxQ,
+      ),
     };
   }
 
@@ -210,14 +215,26 @@ class HomeService {
 
       final categoryAssociations =
       exerciseData['exercise_category_association'] as List?;
-      int? categoryId;
-      String? categoryName;
+      int? associationCategoryId;
+      String? associationCategoryName;
 
       if (categoryAssociations != null && categoryAssociations.isNotEmpty) {
         final catData = categoryAssociations.first['exercise_categories'];
-        categoryId = catData?['id'] as int?;
-        categoryName = (catData?['name'] as String?)?.toLowerCase();
+        associationCategoryId = catData?['id'] as int?;
+        associationCategoryName = (catData?['name'] as String?)?.toLowerCase();
       }
+
+      // Prefer the per-slot category on program_exercises.category_id, so
+      // the same exercise can be a warmup in one program and a main lift
+      // in another. Falls back to the exercise's default association for
+      // rows seeded before the category_id column existed, and to "main"
+      // if neither is set. When the slot overrides the category, leave
+      // categoryName null — downstream consumers already fall back to
+      // the 1/warmup, 2/main, 3/cooldown category_id convention.
+      final slotCategoryId = programEx['category_id'] as int?;
+      final categoryId = slotCategoryId ?? associationCategoryId ?? 2;
+      final categoryName =
+          slotCategoryId == null ? associationCategoryName : null;
 
       final sets = detail?.sets ?? 1;
       final minQ = detail?.minQuantity ?? 0;
@@ -225,9 +242,9 @@ class HomeService {
       final durationType = detail?.durationType ?? 'reps';
 
       // Resolve per-set quantities — use set_quantities if available,
-      // otherwise fall back to min_quantity repeated for each set
+      // otherwise spread min..max evenly across the sets.
       final setQuantities = detail?.resolvedSetQuantities() ??
-          List.filled(sets, minQ);
+          RepSchemeUtils.evenlySpaced(sets: sets, minQuantity: minQ, maxQuantity: maxQ);
 
       // ── Alternative ──────────────────────────────────────────────
       final altExerciseId = detail?.alternativeExerciseId;
@@ -249,7 +266,7 @@ class HomeService {
 
       if (supersetExerciseId != null) {
         final supersetSetQty = detail?.resolvedSupersetSetQuantities() ??
-            List.filled(sets, minQ);
+            RepSchemeUtils.evenlySpaced(sets: sets, minQuantity: minQ, maxQuantity: maxQ);
 
         supersetPartner = await _fetchSupersetPartner(
           supersetExerciseId: supersetExerciseId,
@@ -282,6 +299,7 @@ class HomeService {
         'superset_partner': supersetPartner, // ← populated map
         'category_id': categoryId,
         'category_name': categoryName,
+        'tempo': detail?.tempo,
       });
     }
 
@@ -305,6 +323,7 @@ class ProgramExerciseDetailInline {
   final List<int>? setQuantities;
   final int? supersetExerciseId;
   final List<int>? supersetSetQuantities;
+  final String? tempo;
 
   ProgramExerciseDetailInline({
     required this.sets,
@@ -321,20 +340,29 @@ class ProgramExerciseDetailInline {
     this.setQuantities,
     this.supersetExerciseId,
     this.supersetSetQuantities,
+    this.tempo,
   });
 
   List<int> resolvedSetQuantities() {
     if (setQuantities != null && setQuantities!.isNotEmpty) {
       return setQuantities!;
     }
-    return List.filled(sets, minQuantity);
+    return RepSchemeUtils.evenlySpaced(
+      sets: sets,
+      minQuantity: minQuantity,
+      maxQuantity: maxQuantity,
+    );
   }
 
   List<int> resolvedSupersetSetQuantities() {
     if (supersetSetQuantities != null && supersetSetQuantities!.isNotEmpty) {
       return supersetSetQuantities!;
     }
-    return List.filled(sets, minQuantity);
+    return RepSchemeUtils.evenlySpaced(
+      sets: sets,
+      minQuantity: minQuantity,
+      maxQuantity: maxQuantity,
+    );
   }
 
   factory ProgramExerciseDetailInline.fromMap(Map<String, dynamic> map) {
@@ -353,6 +381,7 @@ class ProgramExerciseDetailInline {
       setQuantities: _parseIntArray(map['set_quantities']),
       supersetExerciseId: map['superset_exercise_id'],
       supersetSetQuantities: _parseIntArray(map['superset_set_quantities']),
+      tempo: map['tempo'] as String?,
     );
   }
 

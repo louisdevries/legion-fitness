@@ -23,6 +23,11 @@ class ProgressRing extends StatelessWidget {
   /// number and progress bar direction flip.
   final bool countUp;
 
+  /// What was actually logged last week for this exact set, e.g. "47s"
+  /// or "12 reps" — shown as a small "beat it" caption below the bar.
+  /// Null when there's no prior week to compare against.
+  final String? previousLabel;
+
   const ProgressRing({
     super.key,
     required this.isTimed,
@@ -35,6 +40,7 @@ class ProgressRing extends StatelessWidget {
     this.onMinus,
     this.onPlus,
     this.countUp = false,
+    this.previousLabel,
   });
 
   int get _displaySeconds =>
@@ -196,6 +202,24 @@ class ProgressRing extends StatelessWidget {
               valueColor: AlwaysStoppedAnimation(accent),
             ),
           ),
+          if (previousLabel != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.emoji_events_outlined,
+                    size: 14, color: cs.onSurface.withValues(alpha: 0.6)),
+                const SizedBox(width: 4),
+                Text(
+                  'Previous: $previousLabel — beat it!',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: cs.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

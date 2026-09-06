@@ -60,8 +60,13 @@ class NextExercisePreview extends StatelessWidget {
             : 'reps';
 
     final isUntilFailure = durationType.contains('failure');
+    final isCountUp = durationType.contains('time_max');
     String quantity;
-    if (setQuantities is List &&
+    if (isCountUp) {
+      // Open-ended holds have no real target — just the timer, no
+      // min-max range or per-set breakdown.
+      quantity = '$sets × as long as possible';
+    } else if (setQuantities is List &&
         setQuantities.isNotEmpty &&
         setQuantities.any((v) => (v as num).toInt() > 0)) {
       // Concrete values present — use them (handles week 2+ progression
@@ -105,6 +110,22 @@ class NextExercisePreview extends StatelessWidget {
                         fontWeight: FontWeight.bold, fontSize: 16)),
                 const SizedBox(height: 4),
                 Text(quantity, style: const TextStyle(color: Colors.grey)),
+                if (exercise['tempo'] != null &&
+                    (exercise['tempo'] as String).isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Tempo: ${exercise['tempo']}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.6),
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -182,6 +203,25 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
       ExerciseRunnerUtils.isEachSide(_activeExercise);
 
   bool get _isCountUp => ExerciseRunnerUtils.isCountUp(_activeExercise);
+
+  // What was actually logged for this exact set last week, if anything.
+  int? get _previousQuantityForCurrentSet {
+    final prev = _activeExercise['previous_set_quantities'];
+    if (prev is List && _s.currentSet <= prev.length) {
+      final v = prev[_s.currentSet - 1];
+      if (v is num && v > 0) return v.toInt();
+    }
+    return null;
+  }
+
+  // Count-up sets have no fixed target to show, so surface last week's
+  // actual time instead — the only reference point the user has for
+  // what to beat.
+  String? get _previousLabel {
+    if (!_isCountUp) return null;
+    final prev = _previousQuantityForCurrentSet;
+    return prev == null ? null : '${prev}s';
+  }
 
   bool get _isNoPickReps =>
       !_isTimed && ExerciseRunnerUtils.isNoPickReps(_activeExercise);
@@ -569,8 +609,10 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
           ),
         );
       } else if (_isTimed) {
-        // Timed: log the duration (already done — no picker needed).
-        secondsLogged = _s.totalSeconds;
+        // Timed: log how long they actually held/ran it, not the
+        // prescribed target — count-up sets have no fixed duration, and
+        // even countdown sets can be finished early via "Finish Set".
+        secondsLogged = _s.totalSeconds - _s.remainingSeconds;
         repsLogged = 0;
       } else if (_isNoPickReps) {
         // "m" duration type: no rep count to enter — just log the
@@ -686,6 +728,13 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
       return sum + sets * multiplier;
     });
   }
+
+  // Position in the workout for the progress bar — the set currently
+  // being worked on, not just the count of fully-finished ones, so it
+  // reads "1" on the very first set instead of sitting at "0" until
+  // it's done.
+  int get _currentSetProgress =>
+      min(_s.completedSets + 1, _totalRequiredSets);
 
   // ── Alternative ──────────────────────────────────────────────────
   void _switchAlternative() {
@@ -843,10 +892,36 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
             ],
           ),
         ),
+      if (!_s.isResting &&
+          !_isSuperset &&
+          _activeExercise['tempo'] != null &&
+          (_activeExercise['tempo'] as String).isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Row(
+            children: [
+              Icon(
+                Icons.speed,
+                size: 14,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'Tempo: ${_activeExercise['tempo']}',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75),
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
+          ),
+        ),
       Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: WorkoutProgressBar(
-          completed: _s.completedSets,
+          completed: _currentSetProgress,
           total: _totalRequiredSets,
         ),
       ),
@@ -933,6 +1008,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
               totalSeconds: _s.totalSeconds,
               quantityDisplay: quantityDisplay,
               countUp: _isCountUp,
+              previousLabel: _previousLabel,
               onTogglePause: _isTimed ? _togglePause : null,
               onMinus: _isTimed ? () => _adjustTimer(-5) : null,
               onPlus: _isTimed ? () => _adjustTimer(5) : null,
@@ -1032,7 +1108,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
                 ],
 
                 WorkoutProgressBar(
-                  completed: _s.completedSets,
+                  completed: _currentSetProgress,
                   total: _totalRequiredSets,
                 ),
                 const SizedBox(height: 8),
@@ -1091,6 +1167,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
                     totalSeconds: _s.totalSeconds,
                     quantityDisplay: quantityDisplay,
                     countUp: _isCountUp,
+                    previousLabel: _previousLabel,
                     onTogglePause: _isTimed ? _togglePause : null,
                     onMinus: _isTimed ? () => _adjustTimer(-5) : null,
                     onPlus: _isTimed ? () => _adjustTimer(5) : null,

@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'cardio_day_service.dart';
 
 /// Single source of truth for "what's completed / what's next" in a
 /// program. Both the home screen and the week/day selector read from
@@ -82,23 +83,44 @@ class ProgramCompletionService {
     }
 
     final requiredExerciseIdsByDay = requiredExerciseIdsByWeekDay[1] ?? {};
-    final daysPerWeek = requiredExerciseIdsByDay.keys.length;
 
     Set<int> requiredExerciseIdsFor(int week, int day) =>
         requiredExerciseIdsByWeekDay[week]?[day] ??
         requiredExerciseIdsByDay[day] ??
         {};
 
-    if (userId == null || requiredExerciseIdsByDay.isEmpty) {
+    // Cardio days (pure outdoor-run days) live in program_days, not
+    // program_exercises — they have no exercises to complete, just a
+    // cardio_day_completions row. Same per-week-explicit-with-week-1-
+    // fallback shape as workout days above.
+    final programDaysByKey = await CardioDayService.fetchProgramDays(programId);
+    final Map<int, Set<int>> cardioDaysByWeek = {};
+    for (final pd in programDaysByKey.values) {
+      if (!pd.isCardio) continue;
+      cardioDaysByWeek.putIfAbsent(pd.weekNumber, () => {}).add(pd.dayNumber);
+    }
+    final week1CardioDays = cardioDaysByWeek[1] ?? {};
+    Set<int> cardioDaysFor(int week) =>
+        cardioDaysByWeek[week] ?? week1CardioDays;
+
+    Set<int> allDaysFor(int week) {
+      final workoutDays =
+          requiredExerciseIdsByWeekDay[week]?.keys.toSet() ??
+              requiredExerciseIdsByDay.keys.toSet();
+      return workoutDays.union(cardioDaysFor(week));
+    }
+
+    final daysPerWeek = allDaysFor(1).length;
+
+    if (userId == null || daysPerWeek == 0) {
+      final firstWeekDays = allDaysFor(1).toList()..sort();
       return ProgramCompletionData(
         totalWeeks: totalWeeks,
         daysPerWeek: daysPerWeek,
         completedDaysByWeek: {},
         highestUnlockedWeek: 1,
-        nextWeek: requiredExerciseIdsByDay.isEmpty ? null : 1,
-        nextDay: requiredExerciseIdsByDay.isEmpty
-            ? null
-            : (requiredExerciseIdsByDay.keys.toList()..sort()).first,
+        nextWeek: firstWeekDays.isEmpty ? null : 1,
+        nextDay: firstWeekDays.isEmpty ? null : firstWeekDays.first,
         workoutDates: {},
       );
     }
@@ -120,9 +142,20 @@ class ProgramCompletionService {
           .add(exerciseId);
     }
 
+    // Cardio days: complete when a cardio_day_completions row exists,
+    // independent of exercise_completions (they have no exercises).
+    final completedCardioKeys =
+        await CardioDayService.fetchCompletedCardioKeys(programId);
+
     final Map<int, Set<int>> completedDaysByWeek = {};
     for (int week = 1; week <= totalWeeks; week++) {
-      for (final day in requiredExerciseIdsByDay.keys) {
+      for (final day in allDaysFor(week)) {
+        if (cardioDaysFor(week).contains(day)) {
+          if (completedCardioKeys.contains('$week-$day')) {
+            completedDaysByWeek.putIfAbsent(week, () => {}).add(day);
+          }
+          continue;
+        }
         final required = requiredExerciseIdsFor(week, day);
         final completed = completedExerciseIdsByDay['$week-$day'] ?? {};
         if (required.isNotEmpty && completed.length >= required.length) {
@@ -132,11 +165,11 @@ class ProgramCompletionService {
     }
 
     // A week is unlocked once every day of the previous week is complete.
-    final allDays = requiredExerciseIdsByDay.keys.toSet();
     int highestUnlockedWeek = 1;
     for (int week = 1; week <= totalWeeks; week++) {
+      final required = allDaysFor(week);
       final completed = completedDaysByWeek[week] ?? {};
-      if (allDays.isNotEmpty && allDays.every(completed.contains)) {
+      if (required.isNotEmpty && required.every(completed.contains)) {
         highestUnlockedWeek = week + 1;
       } else {
         break;
@@ -147,10 +180,10 @@ class ProgramCompletionService {
     // First incomplete day, scanning weeks/days in order.
     int? nextWeek;
     int? nextDay;
-    final sortedDays = requiredExerciseIdsByDay.keys.toList()..sort();
     outer:
     for (int week = 1; week <= totalWeeks; week++) {
       final completed = completedDaysByWeek[week] ?? {};
+      final sortedDays = allDaysFor(week).toList()..sort();
       for (final day in sortedDays) {
         if (!completed.contains(day)) {
           nextWeek = week;

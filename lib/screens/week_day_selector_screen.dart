@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/program_exercise_service.dart';
 import '../services/program_completion_service.dart';
+import '../services/cardio_day_service.dart';
+import 'cardio_day_screen.dart';
 import 'exercise_preview_screen.dart';
 import 'exercise_runner_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -32,6 +34,9 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
 
   Map<int, Set<int>> completedDaysByWeek = {};
   Map<String, dynamic>? programInfo;
+
+  Map<String, ProgramDay> _programDaysByKey = {};
+  Set<String> _completedCardioKeys = {};
 
   bool isActiveProgram = false;
 
@@ -326,11 +331,26 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
             .eq('program_id', widget.programId),
       );
 
+      // Parallel fetch: cardio day metadata + user's cardio completions.
+      _programDaysByKey =
+          await CardioDayService.fetchProgramDays(widget.programId);
+      _completedCardioKeys =
+          await CardioDayService.fetchCompletedCardioKeys(widget.programId);
+
       final completion = await ProgramCompletionService.load(widget.programId);
       completedDaysByWeek
         ..clear()
         ..addAll(completion.completedDaysByWeek);
       highestUnlockedWeek = completion.highestUnlockedWeek;
+
+      // Cardio days: complete when a cardio_day_completions row exists,
+      // independent of exercise_completions (they have no exercises).
+      for (final key in _completedCardioKeys) {
+        final parts = key.split('-');
+        final wk = int.parse(parts[0]);
+        final day = int.parse(parts[1]);
+        completedDaysByWeek.putIfAbsent(wk, () => {}).add(day);
+      }
 
       selectedWeek = 1;
       computeDays();
@@ -340,13 +360,24 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
   }
 
   void computeDays() {
-    daysForSelectedWeek = rows
+    final daysFromExercises = rows
         .where((r) => r['week_number'] == selectedWeek)
         .map((r) => r['day_number'] as int)
-        .toSet()
-        .toList()
+        .toSet();
+
+    // Cardio days may have no program_exercises rows at all (pure cardio
+    // days), so union in program_days for this week too.
+    final daysFromProgramDays = _programDaysByKey.values
+        .where((pd) => pd.weekNumber == selectedWeek)
+        .map((pd) => pd.dayNumber)
+        .toSet();
+
+    daysForSelectedWeek = daysFromExercises.union(daysFromProgramDays).toList()
       ..sort();
   }
+
+  ProgramDay? _programDayFor(int day) =>
+      _programDaysByKey['$selectedWeek-$day'] ?? _programDaysByKey['1-$day'];
 
   bool isDayLocked(int day) {
     if (selectedWeek > highestUnlockedWeek) return true;
@@ -407,6 +438,10 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                     Image.network(
                       programInfo!['image_url'],
                       fit: BoxFit.cover,
+                      errorBuilder: (context, error, stack) => Container(
+                        color: Colors.grey.shade300,
+                        child: const Icon(Icons.image, size: 50),
+                      ),
                     )
                   else
                     Container(color: Colors.black),
@@ -535,6 +570,8 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                 ...daysForSelectedWeek.map((day) {
                   final locked = isDayLocked(day);
                   final completed = isDayCompleted(day);
+                  final programDay = _programDayFor(day);
+                  final isCardio = programDay?.isCardio == true;
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 12),
@@ -547,7 +584,11 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: ListTile(
-                      title: Text("Workout Day $day"),
+                      leading: Icon(
+                          isCardio ? Icons.directions_run : Icons.fitness_center),
+                      title: Text(isCardio
+                          ? (programDay?.title ?? 'Cardio Day $day')
+                          : "Workout Day $day"),
                       trailing: completed
                           ? const Icon(Icons.check_circle)
                           : locked
@@ -556,6 +597,25 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                       onTap: locked
                           ? null
                           : () async {
+                        if (isCardio) {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => CardioDayScreen(
+                                programId: widget.programId,
+                                weekNumber: selectedWeek,
+                                dayNumber: day,
+                              ),
+                            ),
+                          );
+                          // Reload structure so the completion badge updates.
+                          if (mounted) {
+                            setState(() => isLoading = true);
+                            loadProgramStructure();
+                          }
+                          return;
+                        }
+
                         // Check for an existing in-progress session.
                         final prefs = await SharedPreferences.getInstance();
                         final sessionJson = prefs.getString('active_session');

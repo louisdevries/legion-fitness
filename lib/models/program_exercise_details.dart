@@ -1,3 +1,5 @@
+import '../utils/rep_scheme_utils.dart';
+
 class ProgramExerciseDetail {
   final int id;
   final int programExerciseId;
@@ -16,6 +18,7 @@ class ProgramExerciseDetail {
   final List<int>? setQuantities;
   final int? supersetExerciseId;
   final List<int>? supersetSetQuantities;
+  final String? tempo;
 
   ProgramExerciseDetail({
     required this.id,
@@ -35,25 +38,34 @@ class ProgramExerciseDetail {
     this.setQuantities,
     this.supersetExerciseId,
     this.supersetSetQuantities,
+    this.tempo,
   });
 
   /// Returns per-set targets for the main exercise.
-  /// If set_quantities is populated, use it directly.
-  /// Otherwise fall back to min_quantity repeated for each set.
+  /// If set_quantities is populated, use it directly. Otherwise spread
+  /// min_quantity..max_quantity evenly across the sets.
   List<int> resolvedSetQuantities() {
     if (setQuantities != null && setQuantities!.isNotEmpty) {
       return setQuantities!;
     }
-    return List.filled(sets, minQuantity);
+    return RepSchemeUtils.evenlySpaced(
+      sets: sets,
+      minQuantity: minQuantity,
+      maxQuantity: maxQuantity,
+    );
   }
 
   /// Returns per-set targets for the superset partner.
-  /// Falls back to min_quantity repeated if not set.
+  /// Spreads min_quantity..max_quantity evenly across the sets if not set.
   List<int> resolvedSupersetSetQuantities() {
     if (supersetSetQuantities != null && supersetSetQuantities!.isNotEmpty) {
       return supersetSetQuantities!;
     }
-    return List.filled(sets, minQuantity);
+    return RepSchemeUtils.evenlySpaced(
+      sets: sets,
+      minQuantity: minQuantity,
+      maxQuantity: maxQuantity,
+    );
   }
 
   factory ProgramExerciseDetail.fromMap(Map<String, dynamic> map) {
@@ -75,6 +87,7 @@ class ProgramExerciseDetail {
       setQuantities: _parseIntArray(map['set_quantities']),
       supersetExerciseId: map['superset_exercise_id'],
       supersetSetQuantities: _parseIntArray(map['superset_set_quantities']),
+      tempo: map['tempo'] as String?,
     );
   }
 

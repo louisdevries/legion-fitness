@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:developer' as developer;
+import '../utils/rep_scheme_utils.dart';
 
 class ExerciseGenerator {
   final supabase = Supabase.instance.client;
@@ -98,16 +99,25 @@ class ExerciseGenerator {
 
       final detail = _DetailInline.fromMap(detailsData);
 
-      // Category
+      // Category — prefer the per-slot category on
+      // program_exercises.category_id, so the same exercise can be a
+      // warmup in one program and a main lift in another. Falls back to
+      // the exercise's default association for rows seeded before the
+      // category_id column existed, and to "main" if neither is set.
       final categoryAssociations =
       exerciseData['exercise_category_association'] as List?;
-      int? categoryId;
-      String? categoryName;
+      int? associationCategoryId;
+      String? associationCategoryName;
       if (categoryAssociations != null && categoryAssociations.isNotEmpty) {
         final catData = categoryAssociations.first['exercise_categories'];
-        categoryId = catData?['id'] as int?;
-        categoryName = (catData?['name'] as String?)?.toLowerCase();
+        associationCategoryId = catData?['id'] as int?;
+        associationCategoryName = (catData?['name'] as String?)?.toLowerCase();
       }
+      final slotCategoryId = programEx['category_id'] as int?;
+      final categoryId = slotCategoryId ?? associationCategoryId ?? 2;
+      final categoryName = slotCategoryId != null
+          ? _categoryNameForId(slotCategoryId)
+          : (associationCategoryName ?? _categoryNameForId(categoryId));
 
       final sets = detail.sets;
       final minQ = detail.minQuantity;
@@ -133,14 +143,16 @@ class ExerciseGenerator {
       // ── Alternative ──────────────────────────────────────────────
       Map<String, dynamic>? alternativeExercise;
       if (detail.alternativeExerciseId != null) {
+        final altSets = detail.alternativeSet ?? sets;
+        final altMinQ = detail.minAlternative ?? minQ;
+        final altMaxQ = detail.maxAlternative ?? maxQ;
         alternativeExercise = await _fetchExercise(
           exerciseId: detail.alternativeExerciseId!,
-          sets: detail.alternativeSet ?? sets,
-          setQuantities: List.filled(
-              detail.alternativeSet ?? sets,
-              detail.minAlternative ?? minQ),
-          minQ: detail.minAlternative ?? minQ,
-          maxQ: detail.maxAlternative ?? maxQ,
+          sets: altSets,
+          setQuantities: RepSchemeUtils.evenlySpaced(
+              sets: altSets, minQuantity: altMinQ, maxQuantity: altMaxQ),
+          minQ: altMinQ,
+          maxQ: altMaxQ,
           durationType: detail.alternativeDurationType ?? durationType,
         );
       }
@@ -172,6 +184,12 @@ class ExerciseGenerator {
       }
       // ────────────────────────────────────────────────────────────
 
+      // What they actually logged per set last week, if anything — lets
+      // the runner show "Previous: Xs" / "Previous: X reps" so users
+      // know what to beat, independent of whatever this week's target is.
+      final previousSetQuantities =
+          List<int?>.generate(sets, (i) => prevSets[i + 1]);
+
       generatedExercises.add({
         'id': programEx['id'],
         'exercise_id': exerciseId,
@@ -183,6 +201,7 @@ class ExerciseGenerator {
         'coaching_cues': exerciseData['coaching_cues'] ?? '',
         'sets': sets,
         'set_quantities': progressedSetQty,
+        'previous_set_quantities': previousSetQuantities,
         'min_quantity': progressedSetQty.first,
         'max_quantity': progressedSetQty.reduce((a, b) => a > b ? a : b),
         'duration_type': durationType,
@@ -194,6 +213,7 @@ class ExerciseGenerator {
         'superset_partner': supersetPartner,
         'category_id': categoryId,
         'category_name': categoryName,
+        'tempo': detail.tempo,
       });
     }
 
@@ -207,6 +227,20 @@ class ExerciseGenerator {
     developer.log(
         "Generated ${generatedExercises.length} exercises for Week $targetWeek Day $targetDay");
     return generatedExercises;
+  }
+
+  // Matches the category ids seeded on program_exercises.category_id
+  // (1 = warmup, 2 = main, 3 = cooldown) to the hyphenated names the sort
+  // below expects.
+  String _categoryNameForId(int id) {
+    switch (id) {
+      case 1:
+        return 'warm-up';
+      case 3:
+        return 'cool-down';
+      default:
+        return 'main';
+    }
   }
 
   // ── Per-set progressive overload ─────────────────────────────────
@@ -303,6 +337,7 @@ class _DetailInline {
   final List<int>? setQuantities;
   final int? supersetExerciseId;
   final List<int>? supersetSetQuantities;
+  final String? tempo;
 
   _DetailInline({
     required this.sets,
@@ -318,20 +353,29 @@ class _DetailInline {
     this.setQuantities,
     this.supersetExerciseId,
     this.supersetSetQuantities,
+    this.tempo,
   });
 
   List<int> resolvedSetQuantities() {
     if (setQuantities != null && setQuantities!.isNotEmpty) {
       return setQuantities!;
     }
-    return List.filled(sets, minQuantity);
+    return RepSchemeUtils.evenlySpaced(
+      sets: sets,
+      minQuantity: minQuantity,
+      maxQuantity: maxQuantity,
+    );
   }
 
   List<int> resolvedSupersetSetQuantities() {
     if (supersetSetQuantities != null && supersetSetQuantities!.isNotEmpty) {
       return supersetSetQuantities!;
     }
-    return List.filled(sets, minQuantity);
+    return RepSchemeUtils.evenlySpaced(
+      sets: sets,
+      minQuantity: minQuantity,
+      maxQuantity: maxQuantity,
+    );
   }
 
   factory _DetailInline.fromMap(Map<String, dynamic> map) {
@@ -349,6 +393,7 @@ class _DetailInline {
       setQuantities: _parseIntArray(map['set_quantities']),
       supersetExerciseId: map['superset_exercise_id'],
       supersetSetQuantities: _parseIntArray(map['superset_set_quantities']),
+      tempo: map['tempo'] as String?,
     );
   }
 

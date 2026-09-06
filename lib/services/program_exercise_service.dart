@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'exercise_detail_service.dart';
+import '../utils/rep_scheme_utils.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -121,19 +122,32 @@ class ProgramExerciseService {
 
       final categoryAssociations =
       exerciseInfo['exercise_category_association'] as List?;
-      int? categoryId;
-      String? categoryName;
+      int? associationCategoryId;
+      String? associationCategoryName;
 
       if (categoryAssociations != null && categoryAssociations.isNotEmpty) {
         final catData = categoryAssociations.first['exercise_categories'];
-        categoryId = catData?['id'] as int?;
-        categoryName = (catData?['name'] as String?)?.toLowerCase();
+        associationCategoryId = catData?['id'] as int?;
+        associationCategoryName = (catData?['name'] as String?)?.toLowerCase();
       }
+
+      // Prefer the per-slot category on program_exercises.category_id, so
+      // the same exercise can be a warmup in one program and a main lift
+      // in another. Falls back to the exercise's default association for
+      // rows seeded before the category_id column existed, and to "main"
+      // if neither is set. When the slot overrides the category, leave
+      // categoryName null — downstream consumers already fall back to
+      // the 1/warmup, 2/main, 3/cooldown category_id convention.
+      final slotCategoryId = pe['category_id'] as int?;
+      final categoryId = slotCategoryId ?? associationCategoryId ?? 2;
+      final categoryName =
+          slotCategoryId == null ? associationCategoryName : null;
 
       final details =
       await ProgramExerciseDetailService.fetchDetailsForExercise(pe['id']);
       final detail = details.isNotEmpty ? details.first : null;
 
+      final sets = detail?.sets ?? 1;
       int minQ = detail?.minQuantity ?? 0;
       int maxQ = detail?.maxQuantity ?? minQ;
 
@@ -177,27 +191,41 @@ class ProgramExerciseService {
         debugPrint('Alternative exercise data: $altData');
 
         if (altData != null) {
+          final altSets = detail?.alternativeSet ?? sets;
+          final altMinQ = detail?.minAlternative ?? minQ;
+          final altMaxQ = detail?.maxAlternative ?? maxQ;
           alternativeExercise = {
             'id': altData['id'],
             'name': altData['name'] ?? 'Alternative Exercise',
             'media_url': altData['media_url'] ?? '',
             'coaching_cues': altData['coaching_cues'] ?? '',
-            'sets': detail?.alternativeSet ?? detail?.sets ?? 1,
-            'min_quantity': detail?.minAlternative ?? minQ,
-            'max_quantity': detail?.maxAlternative ?? maxQ,
+            'sets': altSets,
+            'min_quantity': altMinQ,
+            'max_quantity': altMaxQ,
             'duration_type':
             detail?.alternativeDurationType ?? detail?.durationType ?? 'reps',
+            'set_quantities': RepSchemeUtils.evenlySpaced(
+                sets: altSets, minQuantity: altMinQ, maxQuantity: altMaxQ),
           };
         }
       }
       // ─────────────────────────────────────────────────────────────
 
+      // Resolve per-set quantities — use the stored set_quantities array
+      // if this row has one, otherwise spread min..max evenly across sets.
+      final setQuantities = (detail?.setQuantities != null &&
+              detail!.setQuantities!.isNotEmpty)
+          ? detail.setQuantities!
+          : RepSchemeUtils.evenlySpaced(
+              sets: sets, minQuantity: minQ, maxQuantity: maxQ);
+
       final merged = {
         ...exerciseInfo,
         'program_exercise_id': pe['id'],
-        'sets': detail?.sets ?? 1,
+        'sets': sets,
         'min_quantity': minQ,
         'max_quantity': maxQ,
+        'set_quantities': setQuantities,
         'duration_type': detail?.durationType ?? 'reps',
         'is_superset': detail?.isSuperset ?? false,
         'has_alternative': detail?.hasAlternative ?? false,
@@ -209,6 +237,7 @@ class ProgramExerciseService {
         'alternative_duration_type': detail?.alternativeDurationType,
         'category_id': categoryId,
         'category_name': categoryName,
+        'tempo': detail?.tempo,
       };
 
       exercisesWithDetails.add(merged);

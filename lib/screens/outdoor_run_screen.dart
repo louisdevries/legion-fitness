@@ -18,6 +18,8 @@ import '../models/run_state.dart';
 import '../widgets/tap_route_builder.dart';
 import '../services/achievement_service.dart';
 import '../services/xp_service.dart';
+import '../services/cardio_day_service.dart';
+import '../utils/user_prefs.dart';
 
 const String mapboxToken =
     "pk.eyJ1IjoibG91aXNkZXZyaWVzIiwiYSI6ImNtbnlsZ3d1dDAzMXgycXNlcXlyaHJrdmwifQ.bDTfupr74bI5qnK7VCgBHg";
@@ -219,6 +221,21 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                     ? '+${g.amount} XP — Level Up! Now Level ${g.newLevel}'
                     : '+${g.amount} XP · ${g.label}',
               );
+            }
+          }
+
+          // Try to auto-complete a cardio day if the user has an active
+          // program with cardio days matching this run's duration.
+          final activeProgramId = await UserPrefs.getInt('active_program_id');
+          if (activeProgramId != null) {
+            final autoCompleted =
+                await CardioDayService.tryAutoCompleteFromRun(
+              programId: activeProgramId,
+              runId: null,
+              runDurationSeconds: _state.elapsedSeconds,
+            );
+            if (autoCompleted != null && mounted) {
+              _showSnackBar('🎉 Cardio day complete: ${autoCompleted.title}');
             }
           }
 

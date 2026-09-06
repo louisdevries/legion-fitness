@@ -163,6 +163,10 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
     final String quantityLabel;
     if (durationType == 'until failure') {
       quantityLabel = '$sets sets × until failure';
+    } else if (durationType.contains('time_max')) {
+      // Count-up/open-ended holds have no real target — just the timer,
+      // no min-max range.
+      quantityLabel = '$sets sets × as long as possible';
     } else if (minQ == maxQ) {
       final unit = isTimeUnit ? 'sec' : 'reps';
       quantityLabel = '$sets sets × $minQ $unit';
@@ -196,7 +200,25 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
         ),
 
         title: Text(ex['name'] ?? 'Exercise'),
-        subtitle: Text(quantityLabel),
+        subtitle: (ex['tempo'] != null && (ex['tempo'] as String).isNotEmpty)
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(quantityLabel),
+                  Text(
+                    'Tempo: ${ex['tempo']}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.6),
+                    ),
+                  ),
+                ],
+              )
+            : Text(quantityLabel),
 
         trailing: GestureDetector(
           onLongPressStart: (_) {
