@@ -17,6 +17,7 @@ import 'exercise_runner_screen.dart';
 import 'dart:convert';
 import '../services/achievement_service.dart';
 import 'achievements_screen.dart';
+import 'meals_screen.dart';
 import '../services/xp_service.dart';
 import '../widgets/xp_widgets.dart';
 
@@ -408,12 +409,21 @@ class _HomeScreenState extends State<HomeScreen>
 
           const SizedBox(height: 16),
 
-          // Meal Suggestions
-          _buildActionSection(
-            title: "Meal Suggestions",
-            description: "Nutrition to support your training",
-            icon: Icons.restaurant,
-            route: '/meal-suggestions',
+          // Meals
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const MealsScreen(),
+                ),
+              );
+            },
+            child: _buildActionSectionStatic(
+              title: "Meals",
+              description: "Track calories and macros",
+              icon: Icons.restaurant,
+            ),
           ),
         ],
         ),
@@ -905,22 +915,6 @@ class _HomeScreenState extends State<HomeScreen>
             }),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildActionSection({
-    required String title,
-    required String description,
-    required IconData icon,
-    required String route,
-  }) {
-    return GestureDetector(
-      onTap: () => Navigator.pushNamed(context, route),
-      child: _buildActionSectionStatic(
-        title: title,
-        description: description,
-        icon: icon,
       ),
     );
   }

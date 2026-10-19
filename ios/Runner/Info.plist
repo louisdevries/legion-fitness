@@ -4,6 +4,8 @@
 <dict>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>This app uses your location to track outdoor runs.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>This app uses your camera to scan food barcodes and take progress photos.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

@@ -155,7 +155,7 @@ class ProgramExerciseService {
         final prevWeek = weekNumber - 1;
 
         final prevLogs = await supabase
-            .from('progress_logs')
+            .from('exercise_completions')
             .select('reps_completed')
             .eq('program_id', programId)
             .eq('exercise_id', pe['exercise_id'])

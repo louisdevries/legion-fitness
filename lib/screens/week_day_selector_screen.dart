@@ -134,29 +134,18 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
           .eq('user_id', userId)
           .select();
 
-      // Same for progress_logs — it has stale data from previous weeks
-      // that the progression engine reads from.
-      final logsDeleted = await supabase
-          .from('progress_logs')
-          .delete()
-          .eq('program_id', widget.programId)
-          .eq('user_id', userId)
-          .select();
+      debugPrint('Reset: removed ${completionsDeleted.length} completions');
 
-      debugPrint(
-          'Reset: removed ${completionsDeleted.length} completions, '
-              '${logsDeleted.length} progress logs');
-
-      // If both came back empty AND we know the user has rows for this
+      // If nothing came back AND we know the user has rows for this
       // program (which is why they're hitting reset), RLS is likely
       // blocking. Surface this clearly.
-      if (completionsDeleted.isEmpty && logsDeleted.isEmpty) {
+      if (completionsDeleted.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
               'Reset returned no rows. Check Supabase RLS policies '
-                  'allow DELETE on exercise_completions and progress_logs.',
+                  'allow DELETE on exercise_completions.',
             ),
             backgroundColor: Colors.red,
             duration: Duration(seconds: 6),

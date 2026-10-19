@@ -51,7 +51,7 @@ Key tables:
 - exercise_categories  
 - exercise_supersets  
 - exercise_alternatives  
-- progress_logs  
+- exercise_completions  
 - weight_logs  
 - health_profiles  
 

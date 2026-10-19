@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'widgets/loading_overlay.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'services/sync_service.dart';
 
 // Screens
 import 'auth/splash_screen.dart';
@@ -223,6 +224,9 @@ class _MainShellState extends State<MainShell> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Push anything logged offline in a previous session.
+      if (!widget.isGuest) SyncService.trySync();
+
       if (!await Permission.ignoreBatteryOptimizations.isGranted) {
         await Permission.ignoreBatteryOptimizations.request();
       }

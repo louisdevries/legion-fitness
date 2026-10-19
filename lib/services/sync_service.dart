@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 import '../database/app_database.dart';
 import '../services/progress_service.dart';
+import 'food_service.dart';
 
 class SyncService {
   static bool _isSyncing = false;
@@ -13,6 +14,7 @@ class SyncService {
     _isSyncing = true;
     try {
       await _syncPending();
+      await FoodService.syncPending();
     } finally {
       _isSyncing = false;
     }
