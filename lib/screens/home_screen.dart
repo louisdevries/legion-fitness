@@ -1,84 +1,93 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:health/health.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'exercise_preview_screen.dart';
+import '../main.dart'; // AppSettings
 import '../models/home_state.dart';
-import '../services/home_service.dart';
-import '../services/exercise_generator.dart';
+import '../models/local_custom_program.dart';
+import '../models/meal_log.dart';
+import '../services/achievement_service.dart';
 import '../services/cardio_day_service.dart';
+import '../services/exercise_generator.dart';
+import '../services/food_service.dart';
+import '../services/home_service.dart';
+import '../services/local_program_service.dart';
+import '../services/nutrition_targets_service.dart';
+import '../services/xp_service.dart';
+import '../theme/app_theme.dart';
+import 'achievements_screen.dart';
 import 'cardio_day_screen.dart';
 import 'custom_exercise_screen.dart';
-import 'premium_program_screen.dart';
-import '../main.dart'; // AppSettings
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'exercise_preview_screen.dart';
 import 'exercise_runner_screen.dart';
-import 'dart:convert';
-import '../services/achievement_service.dart';
-import 'achievements_screen.dart';
 import 'meals_screen.dart';
-import '../services/xp_service.dart';
-import '../widgets/xp_widgets.dart';
+import 'premium_program_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onGoToPrograms;
-  const HomeScreen({super.key, this.onGoToPrograms});
+  final VoidCallback? onGoToProfile;
+  const HomeScreen({super.key, this.onGoToPrograms, this.onGoToProfile});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
-    with SingleTickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> {
   final _homeService = HomeService();
   final _exerciseGenerator = ExerciseGenerator();
   List<AchievementRow> _recentUnlocks = [];
 
   StreamSubscription<AuthState>? _authSub;
   late HomeState _state;
-  late AnimationController _pulseController;
   XpSummary _xpSummary = const XpSummary.empty();
+  String? _firstName;
+  List<LocalCustomProgram> _customPrograms = [];
+
+  // Today's food
+  List<MealLog> _todayMeals = [];
+  NutritionTargets? _targets;
 
   // ================= HEALTH CONNECT =================
   final Health _health = Health();
   int _steps = 0;
   bool _healthAuthorized = false;
 
+  static const _dailyStepGoal = 10000;
+
+  bool get _signedIn => Supabase.instance.client.auth.currentUser != null;
+
   @override
   void initState() {
     super.initState();
     _state = HomeState();
 
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-
     if (AppSettings.googleFitEnabled.value) _initHealth();
     AppSettings.googleFitEnabled.addListener(_onGoogleFitChanged);
 
     _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((event) {
-      if (mounted) {
-        _loadHomeData();
-        _loadRecentUnlocks();
-        _loadXp();
-      }
+      if (mounted) _loadAll();
     });
 
-    _loadHomeData();
-    _loadRecentUnlocks();
-    _loadXp();
+    _loadAll();
   }
-
-
 
   @override
   void dispose() {
     AppSettings.googleFitEnabled.removeListener(_onGoogleFitChanged);
     _authSub?.cancel();
-    _pulseController.dispose();
     super.dispose();
+  }
+
+  void _loadAll() {
+    _loadHomeData();
+    _loadRecentUnlocks();
+    _loadXp();
+    _loadName();
+    _loadCustomPrograms();
+    _loadFood();
   }
 
   void _onGoogleFitChanged() {
@@ -102,10 +111,40 @@ class _HomeScreenState extends State<HomeScreen>
     setState(() => _xpSummary = summary);
   }
 
+  Future<void> _loadName() async {
+    final name = await _homeService.loadFirstName();
+    if (mounted) setState(() => _firstName = name);
+  }
+
+  Future<void> _loadCustomPrograms() async {
+    final programs = await LocalProgramService.loadAll();
+    if (mounted) setState(() => _customPrograms = programs);
+  }
+
+  Future<void> _loadFood({bool refresh = false}) async {
+    if (!_signedIn) return;
+    try {
+      final today = DateTime.now();
+      if (refresh) await FoodService.refreshDay(today);
+      final meals = await FoodService.getMealsForDay(today);
+      final targets = await NutritionTargetsService.getTargets();
+      if (!mounted) return;
+      setState(() {
+        _todayMeals = meals;
+        _targets = targets;
+      });
+    } catch (e) {
+      debugPrint('Home food load failed: $e');
+    }
+  }
+
   Future<void> _onRefresh() async {
     await Future.wait([
       _loadHomeData(),
       _loadRecentUnlocks(),
+      _loadXp(),
+      _loadCustomPrograms(),
+      _loadFood(refresh: true),
       _fetchSteps(),
     ]);
   }
@@ -337,288 +376,226 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  Future<void> _push(Widget screen) =>
+      Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+
+  // ================= BUILD =================
+
   @override
   Widget build(BuildContext context) {
     if (_state.isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return RefreshIndicator(
-      onRefresh: _onRefresh,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16),
-        child: Column(
-        children: [
-          HomeXpBanner(
-            summary: _xpSummary,
-            onTap: () {
-              // Optional: navigate to profile or achievements
-            },
-          ),
-          const SizedBox(height: 16),
-          _state.programId != null &&
-                  Supabase.instance.client.auth.currentUser != null
-              ? _buildResumeWorkoutBanner()
-              : _buildChooseProgramBanner(),
-          const SizedBox(height: 16),
-          _buildWeeklyProgressCard(),
-          const SizedBox(height: 16),
-          _buildStepCounterCard(),
-          if (_recentUnlocks.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _buildRecentUnlocksCard(),
+    Widget pad(Widget child) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: child,
+        );
+
+    return SafeArea(
+      bottom: false,
+      child: RefreshIndicator(
+        onRefresh: _onRefresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.only(top: 12, bottom: 20),
+          children: [
+            pad(_buildHeader()),
+            if (_signedIn) ...[
+              const SizedBox(height: 16),
+              pad(_buildXpCard()),
+            ],
+            const SizedBox(height: 12),
+            pad(_buildHeroCard()),
+            const SizedBox(height: 12),
+            pad(_buildWeekCard()),
+            const SizedBox(height: 12),
+            pad(IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: _buildStepsCard()),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildCaloriesCard()),
+                ],
+              ),
+            )),
+            if (_recentUnlocks.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              pad(_buildRecentUnlocksCard()),
+            ],
+            const SizedBox(height: 24),
+            pad(_buildProgramsHeader()),
+            const SizedBox(height: 12),
+            _buildProgramsCarousel(),
           ],
-          const SizedBox(height: 16),
-          // Custom Programs
-          GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const CustomExerciseScreen(),
-                ),
-              );
-            },
-            child: _buildActionSectionStatic(
-              title: "Custom Programs",
-              description: "Build or manage your workout plans",
-              icon: Icons.fitness_center,
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Premium Program
-          GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const PremiumProgramScreen(),
-                ),
-              );
-            },
-            child: _buildActionSectionStatic(
-              title: "Premium Program",
-              description: "Get a program designed just for you",
-              icon: Icons.workspace_premium,
-              premium: true,
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Meals
-          GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const MealsScreen(),
-                ),
-              );
-            },
-            child: _buildActionSectionStatic(
-              title: "Meals",
-              description: "Track calories and macros",
-              icon: Icons.restaurant,
-            ),
-          ),
-        ],
         ),
       ),
     );
   }
 
-  // ================= STEP COUNTER CARD =================
+  // ================= SHARED BITS =================
 
-  Widget _buildStepCounterCard() {
-    final theme = Theme.of(context);
+  Widget _card({
+    required Widget child,
+    VoidCallback? onTap,
+    EdgeInsetsGeometry padding = const EdgeInsets.all(16),
+    Color? borderColor,
+  }) {
+    final c = AppColors.of(context);
+    return Material(
+      color: c.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: borderColor ?? c.cardBorder),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(padding: padding, child: child),
+      ),
+    );
+  }
 
-    // ── Not connected: prominent CTA card ──────────────────────────
-    if (!_healthAuthorized) {
-      return GestureDetector(
-        onTap: _requestPermissions,
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: theme.colorScheme.primary.withValues(alpha: 0.25),
-              width: 1.2,
+  TextStyle _display(double size, {Color? color}) => TextStyle(
+        fontFamily: AppTheme.displayFont,
+        fontWeight: FontWeight.w800,
+        fontSize: size,
+        height: 1.05,
+        color: color ?? Theme.of(context).colorScheme.onSurface,
+      );
+
+  Widget _bar(double value, {double height = 6}) {
+    final c = AppColors.of(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(height),
+      child: LinearProgressIndicator(
+        value: value.clamp(0.0, 1.0),
+        minHeight: height,
+        backgroundColor: c.track,
+        valueColor: AlwaysStoppedAnimation(c.accent),
+      ),
+    );
+  }
+
+  static String _thousands(int n) => n.toString().replaceAllMapped(
+        RegExp(r'\B(?=(\d{3})+(?!\d))'),
+        (_) => ',',
+      );
+
+  // ================= HEADER =================
+
+  Widget _buildHeader() {
+    final c = AppColors.of(context);
+    final hour = DateTime.now().hour;
+    final greeting = hour < 12
+        ? 'Good morning'
+        : hour < 18
+            ? 'Good afternoon'
+            : 'Good evening';
+
+    Widget circleButton({
+      required IconData icon,
+      required Color color,
+      required Color border,
+      required String tooltip,
+      required VoidCallback? onTap,
+    }) {
+      return Tooltip(
+        message: tooltip,
+        child: Material(
+          color: Colors.transparent,
+          shape: CircleBorder(side: BorderSide(color: border)),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: SizedBox(
+              width: 46,
+              height: 46,
+              child: Icon(icon, color: color, size: 22),
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(
-                  alpha: theme.brightness == Brightness.dark ? 0.3 : 0.08,
-                ),
-                blurRadius: 8,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: theme.colorScheme.primary.withValues(alpha: 0.12),
-                ),
-                child: Icon(
-                  Icons.directions_walk,
-                  size: 30,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Track your steps",
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      "Connect to Health Connect to see your daily step count.",
-                      style: TextStyle(
-                        color: theme.colorScheme.onSurface
-                            .withValues(alpha: 0.7),
-                        fontSize: 13,
-                        height: 1.3,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Text(
-                          "Tap to connect",
-                          style: TextStyle(
-                            color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(width: 2),
-                        Icon(
-                          Icons.arrow_forward,
-                          size: 14,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
           ),
         ),
       );
     }
 
-    // ── Connected: normal step display ─────────────────────────────
-    const dailyGoal = 10000;
-    final progress = (_steps / dailyGoal).clamp(0.0, 1.0);
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(
-              alpha: theme.brightness == Brightness.dark ? 0.3 : 0.08,
-            ),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(greeting, style: TextStyle(color: c.muted, fontSize: 15)),
+              const SizedBox(height: 2),
+              Text(
+                _firstName ?? (_signedIn ? 'Welcome back' : 'Welcome'),
+                style: _display(32),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+        circleButton(
+          icon: Icons.workspace_premium_outlined,
+          color: c.premium,
+          border: c.premium.withValues(alpha: 0.5),
+          tooltip: 'Premium',
+          onTap: () => _push(const PremiumProgramScreen()),
+        ),
+        const SizedBox(width: 10),
+        circleButton(
+          icon: Icons.person_outline,
+          color: Theme.of(context).colorScheme.onSurface,
+          border: c.cardBorder,
+          tooltip: 'Profile',
+          onTap: widget.onGoToProfile,
+        ),
+      ],
+    );
+  }
+
+  // ================= XP =================
+
+  Widget _buildXpCard() {
+    final c = AppColors.of(context);
+    final s = _xpSummary;
+    final toNext = (s.xpForLevel - s.xpIntoLevel).clamp(0, s.xpForLevel);
+
+    return _card(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
-          // Circular progress around the icon
-          SizedBox(
-            width: 56,
-            height: 56,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                SizedBox(
-                  width: 56,
-                  height: 56,
-                  child: CircularProgressIndicator(
-                    value: progress,
-                    strokeWidth: 4,
-                    backgroundColor:
-                    theme.colorScheme.onSurface.withValues(alpha: 0.08),
-                    valueColor: AlwaysStoppedAnimation(
-                      progress >= 1.0
-                          ? Colors.green
-                          : theme.colorScheme.primary,
-                    ),
-                  ),
-                ),
-                Icon(
-                  Icons.directions_walk,
-                  size: 24,
-                  color: theme.colorScheme.primary,
-                ),
-              ],
+          Container(
+            width: 40,
+            height: 40,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: c.accent,
+              borderRadius: BorderRadius.circular(10),
             ),
+            child: Text('${s.level}', style: _display(22, color: c.onAccent)),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  "Daily Steps",
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                const SizedBox(height: 4),
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
                   children: [
                     Text(
-                      "$_steps",
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.onSurface,
-                      ),
+                      'Level ${s.level}',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 14),
                     ),
+                    const Spacer(),
                     Text(
-                      " / $dailyGoal",
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: theme.colorScheme.onSurface
-                            .withValues(alpha: 0.55),
-                      ),
+                      '${_thousands(toNext)} XP to Level ${s.level + 1}',
+                      style: TextStyle(color: c.muted, fontSize: 12),
                     ),
                   ],
                 ),
-                if (progress >= 1.0)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      "Goal reached 🎉",
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.green.shade600,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
+                const SizedBox(height: 8),
+                _bar(s.progress),
               ],
             ),
           ),
@@ -627,463 +604,692 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ================= CHOOSE PROGRAM BANNER =================
+  // ================= HERO (resume / choose program) =================
 
-  Widget _buildChooseProgramBanner() {
-    final theme = Theme.of(context);
+  Widget _buildHeroCard() {
+    final hasProgram = _state.programId != null && _signedIn;
 
-    return GestureDetector(
-      onTap: widget.onGoToPrograms,
-      child: AspectRatio(
-        aspectRatio: 16 / 9,
-        child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            colors: [
-              theme.colorScheme.primary.withValues(alpha: 0.85),
-              theme.colorScheme.primary.withValues(alpha: 0.5),
-            ],
-            begin: Alignment.bottomLeft,
-            end: Alignment.topRight,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.18),
-              blurRadius: 10,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Positioned(
-              right: -20,
-              top: -20,
-              child: Icon(
-                Icons.fitness_center,
-                size: 160,
-                color: Colors.white.withValues(alpha: 0.07),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.add, color: Colors.white, size: 22),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              "Choose a Program",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              "Pick a plan and start training today",
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.8),
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              "Browse",
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                            SizedBox(width: 4),
-                            Icon(Icons.arrow_forward,
-                                color: Colors.white, size: 16),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-      ),
+    if (!hasProgram) {
+      return _heroShell(
+        eyebrow: 'GET STARTED',
+        title: 'Choose a program',
+        subtitle: 'Pick a plan and start training today',
+        buttonLabel: 'Browse programs',
+        buttonIcon: Icons.arrow_forward,
+        onPressed: widget.onGoToPrograms,
+      );
+    }
+
+    if (_state.isProgramComplete) {
+      return _heroShell(
+        eyebrow: 'PROGRAM COMPLETE',
+        title: _state.programName ?? 'Program',
+        subtitle: 'Every session done. Time for the next challenge 🎉',
+        buttonLabel: 'Choose next program',
+        buttonIcon: Icons.arrow_forward,
+        onPressed: widget.onGoToPrograms,
+      );
+    }
+
+    final day = _state.nextDay!;
+    final title = _state.nextDayTitle;
+    final chips = <String>[
+      if (_state.nextDayIsCardio) 'Cardio',
+      if (_state.nextDayExerciseCount != null)
+        '${_state.nextDayExerciseCount} exercise${_state.nextDayExerciseCount == 1 ? '' : 's'}',
+      if (_state.nextDayMinutes != null)
+        _state.nextDayIsCardio
+            ? 'At least ${_state.nextDayMinutes} min'
+            : 'About ${_state.nextDayMinutes} min',
+    ];
+
+    return _heroShell(
+      eyebrow: 'RESUME PROGRAM',
+      title: _state.programName ?? 'Your program',
+      subtitle: 'Week ${_state.nextWeek} · Day $day'
+          '${title != null && title.isNotEmpty ? ' — $title' : ''}',
+      chips: chips,
+      buttonLabel: 'Start Day $day',
+      buttonIcon: Icons.play_arrow_rounded,
+      onPressed: _navigateToWorkout,
     );
   }
 
-  // ================= RESUME WORKOUT BANNER =================
-
-  Widget _buildResumeWorkoutBanner() {
-    final theme = Theme.of(context);
-
-    return GestureDetector(
-      onTap: _state.isProgramComplete ? null : _navigateToWorkout,
-      child: AspectRatio(
-        aspectRatio: 16 / 9,
-        child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.18),
-              blurRadius: 10,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (_state.programImage != null)
-              Image.network(
-                _state.programImage!,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stack) => Container(
-                  color: Colors.grey.shade300,
-                  child: const Icon(Icons.image, size: 50),
-                ),
-              )
-            else
-              Container(color: Colors.grey.shade800),
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [
-                    Colors.black.withValues(alpha: 0.75),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _state.programName ?? '',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _state.isProgramComplete
-                        ? "🎉 Program completed"
-                        : "Resume · Week ${_state.nextWeek} Day ${_state.nextDay}",
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: Colors.white70),
-                  ),
-                  const SizedBox(height: 10),
-                  LinearProgressIndicator(
-                    value: _state.programProgress,
-                    backgroundColor: Colors.white24,
-                    color: Colors.greenAccent,
-                    minHeight: 6,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-      ),
-    );
-  }
-
-  Widget _buildWeeklyProgressCard() {
-    final theme = Theme.of(context);
+  Widget _heroShell({
+    required String eyebrow,
+    required String title,
+    required String subtitle,
+    List<String> chips = const [],
+    required String buttonLabel,
+    required IconData buttonIcon,
+    required VoidCallback? onPressed,
+  }) {
+    final c = AppColors.of(context);
+    final ink = c.onAccent;
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(
-              alpha: theme.brightness == Brightness.dark ? 0.28 : 0.10,
-            ),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        color: c.accent,
+        borderRadius: BorderRadius.circular(24),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            "This Week",
-            style: theme.textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: List.generate(7, (i) {
-              final d = i + 1;
-              final done = _state.completedDays[d] == true;
-              final isToday = d == DateTime.now().weekday;
-
-              return Expanded(
-                child: Column(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: done
-                            ? Colors.green
-                            : theme.colorScheme.onSurface.withValues(alpha: 0.15),
-                        border: isToday
-                            ? Border.all(
-                          color: theme.colorScheme.primary,
-                          width: 2,
-                        )
-                            : null,
-                      ),
-                      child: Center(
-                        child: done
-                            ? const Icon(Icons.check,
-                            color: Colors.white, size: 20)
-                            : Text(
-                          _dayLabel(d)[0],
-                          style: TextStyle(
-                            color: theme.colorScheme.onSurface,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _dayLabel(d),
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isToday
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.onSurface
-                            .withValues(alpha: 0.7),
-                        fontWeight:
-                        isToday ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionSectionStatic({
-    required String title,
-    required String description,
-    required IconData icon,
-    bool premium = false,
-  }) {
-    final theme = Theme.of(context);
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: premium
-              ? theme.colorScheme.primary.withValues(alpha: 0.3)
-              : theme.colorScheme.onSurface.withValues(alpha: 0.06),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(
-              alpha: theme.brightness == Brightness.dark ? 0.28 : 0.10,
+            eyebrow,
+            style: TextStyle(
+              color: ink,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.4,
             ),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
           ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: theme.colorScheme.primary.withValues(alpha: 0.12),
+          const SizedBox(height: 10),
+          Text(title, style: _display(32, color: ink)),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: TextStyle(
+              color: ink,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
             ),
-            child: Icon(icon, size: 26, color: theme.colorScheme.primary),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          if (chips.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
+                for (final chip in chips)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: ink, width: 1.2),
+                    ),
+                    child: Text(
+                      chip,
+                      style: TextStyle(
+                        color: ink,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: TextStyle(
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                    fontSize: 13,
-                  ),
-                ),
               ],
-            ),
-          ),
-          Icon(
-            Icons.chevron_right,
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRecentUnlocksCard() {
-    if (_recentUnlocks.isEmpty) return const SizedBox.shrink();
-
-    final theme = Theme.of(context);
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const AchievementsScreen()),
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: theme.colorScheme.primary.withValues(alpha: 0.3),
-            width: 1.2,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
             ),
           ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.emoji_events, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
-                const Text(
-                  "Recent Unlocks",
-                  style:
-                  TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            height: 54,
+            child: FilledButton.icon(
+              onPressed: onPressed,
+              icon: Icon(buttonIcon, color: c.accent),
+              label: Text(
+                buttonLabel,
+                style: TextStyle(
+                  color: c.accent,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
                 ),
-                const Spacer(),
-                Text(
-                  "View all",
-                  style: TextStyle(
-                    color: theme.colorScheme.primary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: ink,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ================= YOUR WEEK =================
+
+  Widget _buildWeekCard() {
+    final c = AppColors.of(context);
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final today = DateTime.now().weekday;
+    final done = _state.completedDays.values.where((v) => v).length;
+    final perWeek = _state.daysPerWeek;
+
+    const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    Widget dayMarker(int d) {
+      final trained = _state.completedDays[d] == true;
+      const size = 38.0;
+
+      if (trained) {
+        return Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(color: c.accent, shape: BoxShape.circle),
+          child: Icon(Icons.check_rounded, color: c.onAccent, size: 22),
+        );
+      }
+      if (d == today) {
+        return Container(
+          width: size,
+          height: size,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: c.accent, width: 2),
+          ),
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(color: c.accent, shape: BoxShape.circle),
+          ),
+        );
+      }
+      if (d > today) {
+        return CustomPaint(
+          size: const Size(size, size),
+          painter: _DashedCirclePainter(color: c.muted),
+        );
+      }
+      // Past day without a workout.
+      return SizedBox(
+        width: size,
+        height: size,
+        child: Center(
+          child: Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(color: c.muted, shape: BoxShape.circle),
+          ),
+        ),
+      );
+    }
+
+    Widget legend(Widget marker, String label) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            marker,
+            const SizedBox(width: 6),
+            Text(label, style: TextStyle(color: c.muted, fontSize: 12)),
+          ],
+        );
+
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text('Your week', style: _display(26)),
+              const Spacer(),
+              Text(
+                perWeek > 0 && _state.programId != null
+                    ? '$done of $perWeek workouts done'
+                    : '$done workout${done == 1 ? '' : 's'} done',
+                style: TextStyle(color: c.muted, fontSize: 13),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              for (var d = 1; d <= 7; d++)
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(
+                        labels[d - 1],
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: d == today ? onSurface : c.muted,
+                          fontWeight:
+                              d == today ? FontWeight.w800 : FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      dayMarker(d),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.chevron_right,
-                  size: 16,
-                  color: theme.colorScheme.primary,
+            ],
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 14,
+            runSpacing: 6,
+            children: [
+              legend(
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration:
+                      BoxDecoration(color: c.accent, shape: BoxShape.circle),
                 ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            ..._recentUnlocks.map((a) => Padding(
-              padding: const EdgeInsets.only(top: 6),
+                'Trained',
+              ),
+              legend(
+                Container(
+                  width: 9,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: c.accent, width: 1.5),
+                  ),
+                ),
+                'Today',
+              ),
+              legend(
+                CustomPaint(
+                  size: const Size(9, 9),
+                  painter: _DashedCirclePainter(color: c.muted, dashes: 6),
+                ),
+                'Upcoming',
+              ),
+              legend(
+                Container(
+                  width: 5,
+                  height: 5,
+                  decoration:
+                      BoxDecoration(color: c.muted, shape: BoxShape.circle),
+                ),
+                'Rest',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ================= STEPS & CALORIES =================
+
+  Widget _statCard({
+    required String label,
+    required String value,
+    required double progress,
+    required String caption,
+    VoidCallback? onTap,
+    bool showChevron = false,
+    Widget? action,
+  }) {
+    final c = AppColors.of(context);
+    return _card(
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(label, style: TextStyle(color: c.muted, fontSize: 14)),
+              const Spacer(),
+              if (showChevron)
+                Icon(Icons.chevron_right, size: 20, color: c.muted),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(value, style: _display(38)),
+          const SizedBox(height: 10),
+          _bar(progress, height: 7),
+          const SizedBox(height: 10),
+          Text(
+            caption,
+            style: TextStyle(color: c.muted, fontSize: 12, height: 1.35),
+          ),
+          if (action != null) ...[const SizedBox(height: 6), action],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStepsCard() {
+    final c = AppColors.of(context);
+    if (!_healthAuthorized) {
+      return _statCard(
+        label: 'Steps',
+        value: '—',
+        progress: 0,
+        caption: 'Connect Health Connect to count your steps.',
+        onTap: _requestPermissions,
+        action: Text(
+          'Connect',
+          style: TextStyle(
+            color: c.accentText,
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+          ),
+        ),
+      );
+    }
+    return _statCard(
+      label: 'Steps',
+      value: _thousands(_steps),
+      progress: _steps / _dailyStepGoal,
+      caption: _steps >= _dailyStepGoal
+          ? 'Goal reached 🎉'
+          : 'Goal ${_thousands(_dailyStepGoal)}',
+    );
+  }
+
+  Widget _buildCaloriesCard() {
+    Future<void> openMeals() async {
+      await _push(const MealsScreen());
+      _loadFood();
+    }
+
+    if (!_signedIn) {
+      return _statCard(
+        label: 'Calories',
+        value: '—',
+        progress: 0,
+        caption: 'Log in to track meals.',
+      );
+    }
+
+    final kcal = _todayMeals.fold<double>(0, (s, m) => s + m.kcal).round();
+    final target = _targets?.kcal;
+
+    // Nudge for the meal that's due by now but missing.
+    final hour = DateTime.now().hour;
+    final dueMeal = hour >= 18
+        ? 'dinner'
+        : hour >= 13
+            ? 'lunch'
+            : hour >= 9
+                ? 'breakfast'
+                : null;
+    final missing = dueMeal != null &&
+        !_todayMeals.any((m) => m.mealType == dueMeal);
+    final nudge = missing
+        ? '${dueMeal[0].toUpperCase()}${dueMeal.substring(1)} not logged'
+        : null;
+
+    final caption = [
+      if (target != null) 'of ${_thousands(target)}' else 'Set a daily target',
+      ?nudge,
+    ].join(' · ');
+
+    return _statCard(
+      label: 'Calories',
+      value: _thousands(kcal),
+      progress: target == null ? 0 : kcal / target,
+      caption: caption,
+      onTap: openMeals,
+      showChevron: true,
+    );
+  }
+
+  // ================= RECENT UNLOCKS =================
+
+  Widget _buildRecentUnlocksCard() {
+    final c = AppColors.of(context);
+    return _card(
+      onTap: () => _push(const AchievementsScreen()),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.emoji_events, color: c.premium, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Recent unlocks',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+              ),
+              const Spacer(),
+              Text(
+                'View all',
+                style: TextStyle(
+                  color: c.accentText,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          for (final a in _recentUnlocks)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
               child: Row(
                 children: [
                   Container(
-                    width: 32,
-                    height: 32,
+                    width: 30,
+                    height: 30,
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.primary
-                          .withValues(alpha: 0.12),
+                      color: c.premium.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(
-                      Icons.workspace_premium,
-                      size: 18,
-                      color: theme.colorScheme.primary,
-                    ),
+                    child: Icon(Icons.workspace_premium,
+                        size: 16, color: c.premium),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       a.label,
-                      style:
-                      const TextStyle(fontWeight: FontWeight.w600),
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
               ),
-            )),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
 
-  String _dayLabel(int d) {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return days[d - 1];
+  // ================= PROGRAMS CAROUSEL =================
+
+  Widget _buildProgramsHeader() {
+    final c = AppColors.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Text('Programs', style: _display(28)),
+        const Spacer(),
+        Text('Swipe for more', style: TextStyle(color: c.muted, fontSize: 13)),
+      ],
+    );
+  }
+
+  Widget _buildProgramsCarousel() {
+    final c = AppColors.of(context);
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+
+    Future<void> openCustom() async {
+      await _push(const CustomExerciseScreen());
+      _loadCustomPrograms();
+    }
+
+    Widget programCard({
+      required Widget icon,
+      required String title,
+      required String subtitle,
+      required VoidCallback onTap,
+      Color? borderColor,
+      bool dashed = false,
+    }) {
+      final content = Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            icon,
+            const Spacer(),
+            Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 16,
+                height: 1.2,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: c.muted, fontSize: 12, height: 1.3),
+            ),
+          ],
+        ),
+      );
+
+      return SizedBox(
+        width: 156,
+        child: dashed
+            ? CustomPaint(
+                painter: _DashedRRectPainter(color: c.muted, radius: 20),
+                child: Material(
+                  color: Colors.transparent,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20)),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(onTap: onTap, child: content),
+                ),
+              )
+            : Material(
+                color: c.card,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: BorderSide(color: borderColor ?? c.cardBorder),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(onTap: onTap, child: content),
+              ),
+      );
+    }
+
+    Widget iconBox(IconData icon, Color color, {Color? background}) =>
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: background ?? c.track,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: color, size: 22),
+        );
+
+    final cards = <Widget>[
+      programCard(
+        dashed: true,
+        icon: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(color: c.accent, shape: BoxShape.circle),
+          child: Icon(Icons.add, color: c.onAccent),
+        ),
+        title: 'Create your own',
+        subtitle: 'Pick from the exercise library',
+        onTap: openCustom,
+      ),
+      for (final p in _customPrograms)
+        programCard(
+          icon: iconBox(Icons.fitness_center, c.accentText),
+          title: p.name,
+          subtitle: 'Yours · ${p.daysPerWeek} day${p.daysPerWeek == 1 ? '' : 's'}',
+          onTap: openCustom,
+        ),
+      programCard(
+        borderColor: c.premium.withValues(alpha: 0.6),
+        icon: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: c.premium.withValues(alpha: 0.6)),
+          ),
+          child: Icon(Icons.workspace_premium_outlined,
+              color: c.premium, size: 22),
+        ),
+        title: 'Premium Program',
+        subtitle: 'Designed just for you',
+        onTap: () => _push(const PremiumProgramScreen()),
+      ),
+      programCard(
+        icon: iconBox(Icons.grid_view_rounded, onSurface),
+        title: 'Browse all',
+        subtitle: 'Find your next program',
+        onTap: () => widget.onGoToPrograms?.call(),
+      ),
+    ];
+
+    return SizedBox(
+      height: 172,
+      child: ScrollConfiguration(
+        // No scrollbar on the carousel.
+        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          itemCount: cards.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 12),
+          itemBuilder: (_, i) => cards[i],
+        ),
+      ),
+    );
   }
 }
 
+// ================= PAINTERS =================
+
+class _DashedCirclePainter extends CustomPainter {
+  final Color color;
+  final int dashes;
+  const _DashedCirclePainter({required this.color, this.dashes = 12});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    final rect = Offset.zero & size;
+    final sweep = 2 * 3.141592653589793 / dashes;
+    for (var i = 0; i < dashes; i++) {
+      canvas.drawArc(rect.deflate(1), i * sweep, sweep * 0.55, false, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedCirclePainter old) =>
+      old.color != color || old.dashes != dashes;
+}
+
+class _DashedRRectPainter extends CustomPainter {
+  final Color color;
+  final double radius;
+  const _DashedRRectPainter({required this.color, required this.radius});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    final path = Path()
+      ..addRRect(RRect.fromRectAndRadius(
+        (Offset.zero & size).deflate(0.75),
+        Radius.circular(radius),
+      ));
+    const dash = 6.0, gap = 5.0;
+    for (final metric in path.computeMetrics()) {
+      for (var d = 0.0; d < metric.length; d += dash + gap) {
+        canvas.drawPath(metric.extractPath(d, d + dash), paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedRRectPainter old) =>
+      old.color != color || old.radius != radius;
+}

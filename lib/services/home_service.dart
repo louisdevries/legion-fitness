@@ -17,6 +17,10 @@ class HomeService {
 
     final programInfo = await _loadProgramInfo(programId);
     final progressData = await _loadProgress(programId);
+    final nextDayInfo = progressData.nextWeek == null
+        ? null
+        : await _loadNextDayInfo(
+            programId, progressData.nextWeek!, progressData.nextDay!);
 
     await UserPrefs.setInt('active_week_number', progressData.currentWeek);
     return HomeState(
@@ -28,10 +32,100 @@ class HomeService {
       completedWorkoutDates: progressData.completedWorkoutDates,
       nextWeek: progressData.nextWeek,
       nextDay: progressData.nextDay,
+      daysPerWeek: progressData.daysPerWeek,
+      nextDayTitle: nextDayInfo?.title,
+      nextDayIsCardio: nextDayInfo?.isCardio ?? false,
+      nextDayExerciseCount: nextDayInfo?.exerciseCount,
+      nextDayMinutes: nextDayInfo?.minutes,
       programProgress: progressData.programProgress,
       weekProgress: progressData.weekProgress,
       isLoading: false,
     );
+  }
+
+  /// First word of the user's name from the users table, or null.
+  Future<String?> loadFirstName() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return null;
+    try {
+      final row = await supabase
+          .from('users')
+          .select('name')
+          .eq('id', user.id)
+          .maybeSingle();
+      final name = (row?['name'] as String?)?.trim();
+      if (name == null || name.isEmpty) return null;
+      return name.split(RegExp(r'\s+')).first;
+    } catch (e) {
+      developer.log('loadFirstName error: $e');
+      return null;
+    }
+  }
+
+  /// Title, type, exercise count and a duration estimate for one program
+  /// day. Like the rest of the app, falls back to week 1's layout for
+  /// weeks without their own rows.
+  Future<_NextDayInfo?> _loadNextDayInfo(
+      int programId, int week, int day) async {
+    try {
+      final dayRows = await supabase
+          .from('program_days')
+          .select()
+          .eq('program_id', programId)
+          .eq('day_number', day)
+          .inFilter('week_number', [week, 1]);
+      final days = (dayRows as List).cast<Map<String, dynamic>>();
+      final dayRow = days.firstWhere(
+        (r) => r['week_number'] == week,
+        orElse: () => days.isEmpty ? {} : days.first,
+      );
+      final title = dayRow['title'] as String?;
+
+      if (dayRow['day_type'] == 'cardio') {
+        final seconds = (dayRow['min_duration_seconds'] as num?)?.toInt();
+        return _NextDayInfo(
+          title: title,
+          isCardio: true,
+          minutes: seconds == null ? null : (seconds / 60).round(),
+        );
+      }
+
+      var exercises = await supabase
+          .from('program_exercises')
+          .select('id')
+          .eq('program_id', programId)
+          .eq('week_number', week)
+          .eq('day_number', day);
+      if ((exercises as List).isEmpty && week != 1) {
+        exercises = await supabase
+            .from('program_exercises')
+            .select('id')
+            .eq('program_id', programId)
+            .eq('week_number', 1)
+            .eq('day_number', day);
+      }
+      final peIds = (exercises as List).map((r) => r['id'] as int).toList();
+      if (peIds.isEmpty) return _NextDayInfo(title: title);
+
+      final details = await supabase
+          .from('program_exercise_details')
+          .select('sets')
+          .inFilter('program_exercise_id', peIds);
+      final totalSets = (details as List)
+          .fold<int>(0, (sum, d) => sum + ((d['sets'] as num?)?.toInt() ?? 1));
+
+      // ~2.5 min per set including rest, rounded to 5 min.
+      final minutes = ((totalSets * 2.5) / 5).round() * 5;
+
+      return _NextDayInfo(
+        title: title,
+        exerciseCount: peIds.length,
+        minutes: minutes > 0 ? minutes : null,
+      );
+    } catch (e) {
+      developer.log('_loadNextDayInfo error: $e');
+      return null;
+    }
   }
 
   Future<Map<String, String?>> _loadProgramInfo(int programId) async {
@@ -84,6 +178,7 @@ class HomeService {
         currentWeek: currentWeek,
         nextWeek: completion.nextWeek,
         nextDay: completion.nextDay,
+        daysPerWeek: completion.daysPerWeek,
         completedDays: completedDays,
         completedWorkoutDates: completion.workoutDates,
         programProgress: programProgress,
@@ -392,10 +487,25 @@ class ProgramExerciseDetailInline {
   }
 }
 
+class _NextDayInfo {
+  final String? title;
+  final bool isCardio;
+  final int? exerciseCount;
+  final int? minutes;
+
+  _NextDayInfo({
+    this.title,
+    this.isCardio = false,
+    this.exerciseCount,
+    this.minutes,
+  });
+}
+
 class _ProgressData {
   final int currentWeek;
   final int? nextWeek;
   final int? nextDay;
+  final int daysPerWeek;
   final Map<int, bool> completedDays;
   final Set<String> completedWorkoutDates;
   final double programProgress;
@@ -405,6 +515,7 @@ class _ProgressData {
     this.currentWeek = 1,
     this.nextWeek,
     this.nextDay,
+    this.daysPerWeek = 0,
     this.completedDays = const {},
     this.completedWorkoutDates = const {},
     this.programProgress = 0.0,

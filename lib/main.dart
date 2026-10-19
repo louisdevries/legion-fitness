@@ -6,6 +6,9 @@ import 'package:permission_handler/permission_handler.dart';
 import 'widgets/loading_overlay.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'services/sync_service.dart';
+import 'theme/app_theme.dart';
+import 'package:flutter/foundation.dart' show LicenseRegistry, LicenseEntryWithLineBreaks;
+import 'package:flutter/services.dart' show rootBundle;
 
 // Screens
 import 'auth/splash_screen.dart';
@@ -78,6 +81,16 @@ class AppSettings {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Bundled fonts are OFL-licensed; list them on the licenses page.
+  LicenseRegistry.addLicense(() async* {
+    for (final (family, file) in [
+      ('Barlow Condensed', 'assets/fonts/OFL-BarlowCondensed.txt'),
+      ('Manrope', 'assets/fonts/OFL-Manrope.txt'),
+    ]) {
+      yield LicenseEntryWithLineBreaks([family], await rootBundle.loadString(file));
+    }
+  });
+
   // Configure flutter_map's built-in tile cache.
   BuiltInMapCachingProvider.getOrCreateInstance(
     maxCacheSize: 2 * 1024 * 1024 * 1024,
@@ -129,19 +142,8 @@ class LegionFitnessApp extends StatelessWidget {
 
           themeMode: themeMode,
 
-          theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
-            useMaterial3: true,
-          ),
-
-          darkTheme: ThemeData(
-            brightness: Brightness.dark,
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: Colors.green,
-              brightness: Brightness.dark,
-            ),
-            useMaterial3: true,
-          ),
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
 
           builder: (context, child) {
             return ValueListenableBuilder<bool>(
@@ -242,9 +244,10 @@ class _MainShellState extends State<MainShell> {
   ];
 
   void _goToPrograms() => setState(() => _currentIndex = 1);
+  void _goToProfile() => setState(() => _currentIndex = 4);
 
   List<Widget> get _screens => [
-    HomeScreen(onGoToPrograms: _goToPrograms),
+    HomeScreen(onGoToPrograms: _goToPrograms, onGoToProfile: _goToProfile),
     const ProgramsScreen(),
     OutdoorRunScreen(
       onRunModeChanged: (value) {
@@ -270,15 +273,24 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
+    final navBorder = AppColors.of(context).cardBorder;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_titles[_currentIndex]),
-        centerTitle: true,
-      ),
+      // Home draws its own greeting header.
+      appBar: _currentIndex == 0
+          ? null
+          : AppBar(
+              title: Text(_titles[_currentIndex]),
+              centerTitle: true,
+            ),
 
       body: _screens[_currentIndex],
 
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: navBorder)),
+        ),
+        child: BottomNavigationBar(
         currentIndex: _currentIndex,
 
         // 🔒 BLOCK TAB SWITCHING WHEN RUN MODE ACTIVE
@@ -294,6 +306,7 @@ class _MainShellState extends State<MainShell> {
           BottomNavigationBarItem(icon: Icon(Icons.show_chart), label: 'Progress'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
+        ),
       ),
     );
   }
