@@ -23,6 +23,7 @@ class MealEntries extends Table {
   RealColumn get sugar100g => real().nullable()();
   RealColumn get salt100g => real().nullable()();
   RealColumn get servingG => real().nullable()();
+  TextColumn get servingLabel => text().nullable()();
 
   BoolColumn get synced => boolean().withDefault(const Constant(false))();
   // Deleted locally; removed for good once the delete reaches Supabase.

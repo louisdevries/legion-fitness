@@ -901,6 +901,17 @@ class $MealEntriesTable extends MealEntries
     type: DriftSqlType.double,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _servingLabelMeta = const VerificationMeta(
+    'servingLabel',
+  );
+  @override
+  late final GeneratedColumn<String> servingLabel = GeneratedColumn<String>(
+    'serving_label',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _syncedMeta = const VerificationMeta('synced');
   @override
   late final GeneratedColumn<bool> synced = GeneratedColumn<bool>(
@@ -948,6 +959,7 @@ class $MealEntriesTable extends MealEntries
     sugar100g,
     salt100g,
     servingG,
+    servingLabel,
     synced,
     deleted,
   ];
@@ -1085,6 +1097,15 @@ class $MealEntriesTable extends MealEntries
         servingG.isAcceptableOrUnknown(data['serving_g']!, _servingGMeta),
       );
     }
+    if (data.containsKey('serving_label')) {
+      context.handle(
+        _servingLabelMeta,
+        servingLabel.isAcceptableOrUnknown(
+          data['serving_label']!,
+          _servingLabelMeta,
+        ),
+      );
+    }
     if (data.containsKey('synced')) {
       context.handle(
         _syncedMeta,
@@ -1174,6 +1195,10 @@ class $MealEntriesTable extends MealEntries
         DriftSqlType.double,
         data['${effectivePrefix}serving_g'],
       ),
+      servingLabel: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}serving_label'],
+      ),
       synced: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
         data['${effectivePrefix}synced'],
@@ -1209,6 +1234,7 @@ class MealEntry extends DataClass implements Insertable<MealEntry> {
   final double? sugar100g;
   final double? salt100g;
   final double? servingG;
+  final String? servingLabel;
   final bool synced;
   final bool deleted;
   const MealEntry({
@@ -1229,6 +1255,7 @@ class MealEntry extends DataClass implements Insertable<MealEntry> {
     this.sugar100g,
     this.salt100g,
     this.servingG,
+    this.servingLabel,
     required this.synced,
     required this.deleted,
   });
@@ -1271,6 +1298,9 @@ class MealEntry extends DataClass implements Insertable<MealEntry> {
     }
     if (!nullToAbsent || servingG != null) {
       map['serving_g'] = Variable<double>(servingG);
+    }
+    if (!nullToAbsent || servingLabel != null) {
+      map['serving_label'] = Variable<String>(servingLabel);
     }
     map['synced'] = Variable<bool>(synced);
     map['deleted'] = Variable<bool>(deleted);
@@ -1316,6 +1346,9 @@ class MealEntry extends DataClass implements Insertable<MealEntry> {
       servingG: servingG == null && nullToAbsent
           ? const Value.absent()
           : Value(servingG),
+      servingLabel: servingLabel == null && nullToAbsent
+          ? const Value.absent()
+          : Value(servingLabel),
       synced: Value(synced),
       deleted: Value(deleted),
     );
@@ -1344,6 +1377,7 @@ class MealEntry extends DataClass implements Insertable<MealEntry> {
       sugar100g: serializer.fromJson<double?>(json['sugar100g']),
       salt100g: serializer.fromJson<double?>(json['salt100g']),
       servingG: serializer.fromJson<double?>(json['servingG']),
+      servingLabel: serializer.fromJson<String?>(json['servingLabel']),
       synced: serializer.fromJson<bool>(json['synced']),
       deleted: serializer.fromJson<bool>(json['deleted']),
     );
@@ -1369,6 +1403,7 @@ class MealEntry extends DataClass implements Insertable<MealEntry> {
       'sugar100g': serializer.toJson<double?>(sugar100g),
       'salt100g': serializer.toJson<double?>(salt100g),
       'servingG': serializer.toJson<double?>(servingG),
+      'servingLabel': serializer.toJson<String?>(servingLabel),
       'synced': serializer.toJson<bool>(synced),
       'deleted': serializer.toJson<bool>(deleted),
     };
@@ -1392,6 +1427,7 @@ class MealEntry extends DataClass implements Insertable<MealEntry> {
     Value<double?> sugar100g = const Value.absent(),
     Value<double?> salt100g = const Value.absent(),
     Value<double?> servingG = const Value.absent(),
+    Value<String?> servingLabel = const Value.absent(),
     bool? synced,
     bool? deleted,
   }) => MealEntry(
@@ -1412,6 +1448,7 @@ class MealEntry extends DataClass implements Insertable<MealEntry> {
     sugar100g: sugar100g.present ? sugar100g.value : this.sugar100g,
     salt100g: salt100g.present ? salt100g.value : this.salt100g,
     servingG: servingG.present ? servingG.value : this.servingG,
+    servingLabel: servingLabel.present ? servingLabel.value : this.servingLabel,
     synced: synced ?? this.synced,
     deleted: deleted ?? this.deleted,
   );
@@ -1442,6 +1479,9 @@ class MealEntry extends DataClass implements Insertable<MealEntry> {
       sugar100g: data.sugar100g.present ? data.sugar100g.value : this.sugar100g,
       salt100g: data.salt100g.present ? data.salt100g.value : this.salt100g,
       servingG: data.servingG.present ? data.servingG.value : this.servingG,
+      servingLabel: data.servingLabel.present
+          ? data.servingLabel.value
+          : this.servingLabel,
       synced: data.synced.present ? data.synced.value : this.synced,
       deleted: data.deleted.present ? data.deleted.value : this.deleted,
     );
@@ -1467,6 +1507,7 @@ class MealEntry extends DataClass implements Insertable<MealEntry> {
           ..write('sugar100g: $sugar100g, ')
           ..write('salt100g: $salt100g, ')
           ..write('servingG: $servingG, ')
+          ..write('servingLabel: $servingLabel, ')
           ..write('synced: $synced, ')
           ..write('deleted: $deleted')
           ..write(')'))
@@ -1492,6 +1533,7 @@ class MealEntry extends DataClass implements Insertable<MealEntry> {
     sugar100g,
     salt100g,
     servingG,
+    servingLabel,
     synced,
     deleted,
   );
@@ -1516,6 +1558,7 @@ class MealEntry extends DataClass implements Insertable<MealEntry> {
           other.sugar100g == this.sugar100g &&
           other.salt100g == this.salt100g &&
           other.servingG == this.servingG &&
+          other.servingLabel == this.servingLabel &&
           other.synced == this.synced &&
           other.deleted == this.deleted);
 }
@@ -1538,6 +1581,7 @@ class MealEntriesCompanion extends UpdateCompanion<MealEntry> {
   final Value<double?> sugar100g;
   final Value<double?> salt100g;
   final Value<double?> servingG;
+  final Value<String?> servingLabel;
   final Value<bool> synced;
   final Value<bool> deleted;
   final Value<int> rowid;
@@ -1559,6 +1603,7 @@ class MealEntriesCompanion extends UpdateCompanion<MealEntry> {
     this.sugar100g = const Value.absent(),
     this.salt100g = const Value.absent(),
     this.servingG = const Value.absent(),
+    this.servingLabel = const Value.absent(),
     this.synced = const Value.absent(),
     this.deleted = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -1581,6 +1626,7 @@ class MealEntriesCompanion extends UpdateCompanion<MealEntry> {
     this.sugar100g = const Value.absent(),
     this.salt100g = const Value.absent(),
     this.servingG = const Value.absent(),
+    this.servingLabel = const Value.absent(),
     this.synced = const Value.absent(),
     this.deleted = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -1609,6 +1655,7 @@ class MealEntriesCompanion extends UpdateCompanion<MealEntry> {
     Expression<double>? sugar100g,
     Expression<double>? salt100g,
     Expression<double>? servingG,
+    Expression<String>? servingLabel,
     Expression<bool>? synced,
     Expression<bool>? deleted,
     Expression<int>? rowid,
@@ -1631,6 +1678,7 @@ class MealEntriesCompanion extends UpdateCompanion<MealEntry> {
       if (sugar100g != null) 'sugar100g': sugar100g,
       if (salt100g != null) 'salt100g': salt100g,
       if (servingG != null) 'serving_g': servingG,
+      if (servingLabel != null) 'serving_label': servingLabel,
       if (synced != null) 'synced': synced,
       if (deleted != null) 'deleted': deleted,
       if (rowid != null) 'rowid': rowid,
@@ -1655,6 +1703,7 @@ class MealEntriesCompanion extends UpdateCompanion<MealEntry> {
     Value<double?>? sugar100g,
     Value<double?>? salt100g,
     Value<double?>? servingG,
+    Value<String?>? servingLabel,
     Value<bool>? synced,
     Value<bool>? deleted,
     Value<int>? rowid,
@@ -1677,6 +1726,7 @@ class MealEntriesCompanion extends UpdateCompanion<MealEntry> {
       sugar100g: sugar100g ?? this.sugar100g,
       salt100g: salt100g ?? this.salt100g,
       servingG: servingG ?? this.servingG,
+      servingLabel: servingLabel ?? this.servingLabel,
       synced: synced ?? this.synced,
       deleted: deleted ?? this.deleted,
       rowid: rowid ?? this.rowid,
@@ -1737,6 +1787,9 @@ class MealEntriesCompanion extends UpdateCompanion<MealEntry> {
     if (servingG.present) {
       map['serving_g'] = Variable<double>(servingG.value);
     }
+    if (servingLabel.present) {
+      map['serving_label'] = Variable<String>(servingLabel.value);
+    }
     if (synced.present) {
       map['synced'] = Variable<bool>(synced.value);
     }
@@ -1769,6 +1822,7 @@ class MealEntriesCompanion extends UpdateCompanion<MealEntry> {
           ..write('sugar100g: $sugar100g, ')
           ..write('salt100g: $salt100g, ')
           ..write('servingG: $servingG, ')
+          ..write('servingLabel: $servingLabel, ')
           ..write('synced: $synced, ')
           ..write('deleted: $deleted, ')
           ..write('rowid: $rowid')
@@ -2150,6 +2204,7 @@ typedef $$MealEntriesTableCreateCompanionBuilder =
       Value<double?> sugar100g,
       Value<double?> salt100g,
       Value<double?> servingG,
+      Value<String?> servingLabel,
       Value<bool> synced,
       Value<bool> deleted,
       Value<int> rowid,
@@ -2173,6 +2228,7 @@ typedef $$MealEntriesTableUpdateCompanionBuilder =
       Value<double?> sugar100g,
       Value<double?> salt100g,
       Value<double?> servingG,
+      Value<String?> servingLabel,
       Value<bool> synced,
       Value<bool> deleted,
       Value<int> rowid,
@@ -2269,6 +2325,11 @@ class $$MealEntriesTableFilterComposer
 
   ColumnFilters<double> get servingG => $composableBuilder(
     column: $table.servingG,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get servingLabel => $composableBuilder(
+    column: $table.servingLabel,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2377,6 +2438,11 @@ class $$MealEntriesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get servingLabel => $composableBuilder(
+    column: $table.servingLabel,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<bool> get synced => $composableBuilder(
     column: $table.synced,
     builder: (column) => ColumnOrderings(column),
@@ -2456,6 +2522,11 @@ class $$MealEntriesTableAnnotationComposer
   GeneratedColumn<double> get servingG =>
       $composableBuilder(column: $table.servingG, builder: (column) => column);
 
+  GeneratedColumn<String> get servingLabel => $composableBuilder(
+    column: $table.servingLabel,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<bool> get synced =>
       $composableBuilder(column: $table.synced, builder: (column) => column);
 
@@ -2511,6 +2582,7 @@ class $$MealEntriesTableTableManager
                 Value<double?> sugar100g = const Value.absent(),
                 Value<double?> salt100g = const Value.absent(),
                 Value<double?> servingG = const Value.absent(),
+                Value<String?> servingLabel = const Value.absent(),
                 Value<bool> synced = const Value.absent(),
                 Value<bool> deleted = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -2532,6 +2604,7 @@ class $$MealEntriesTableTableManager
                 sugar100g: sugar100g,
                 salt100g: salt100g,
                 servingG: servingG,
+                servingLabel: servingLabel,
                 synced: synced,
                 deleted: deleted,
                 rowid: rowid,
@@ -2555,6 +2628,7 @@ class $$MealEntriesTableTableManager
                 Value<double?> sugar100g = const Value.absent(),
                 Value<double?> salt100g = const Value.absent(),
                 Value<double?> servingG = const Value.absent(),
+                Value<String?> servingLabel = const Value.absent(),
                 Value<bool> synced = const Value.absent(),
                 Value<bool> deleted = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -2576,6 +2650,7 @@ class $$MealEntriesTableTableManager
                 sugar100g: sugar100g,
                 salt100g: salt100g,
                 servingG: servingG,
+                servingLabel: servingLabel,
                 synced: synced,
                 deleted: deleted,
                 rowid: rowid,

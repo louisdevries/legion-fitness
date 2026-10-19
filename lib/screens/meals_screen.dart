@@ -139,8 +139,8 @@ class _MealsScreenState extends State<MealsScreen> {
     }
     if (!mounted || food == null) return;
 
-    // Open Food Facts search results need a row in our foods table.
-    if (food.id == null && food.isFromOpenFoodFacts) {
+    // Online search results need a row in our foods table.
+    if (food.id == null && (food.isFromOpenFoodFacts || food.isFromUsda)) {
       AppSettings.showLoading();
       try {
         food = await FoodService.ensureCached(food);
@@ -516,7 +516,8 @@ class _MealsScreenState extends State<MealsScreen> {
     final theme = Theme.of(context);
     return Text(
       'Product data from Open Food Facts (openfoodfacts.org), '
-      'available under the Open Database License.',
+      'available under the Open Database License. Generic food data from '
+      'USDA FoodData Central.',
       textAlign: TextAlign.center,
       style: TextStyle(
         fontSize: 11,
@@ -548,10 +549,13 @@ class _AddFoodSheetState extends State<_AddFoodSheet> {
   List<Food>? _results;
   bool _loading = true;
 
-  // Open Food Facts search — only on an explicit tap (their limit is ~10/min).
+  // Online search (USDA + Open Food Facts) — only on an explicit tap, since
+  // OFF allows ~10 searches/min.
+  String? _onlineQuery;
+  bool _onlineLoading = false;
+  List<Food>? _usdaResults;
   List<Food>? _offResults;
-  String? _offQuery;
-  bool _offLoading = false;
+  String? _usdaError;
   String? _offError;
 
   @override
@@ -583,10 +587,11 @@ class _AddFoodSheetState extends State<_AddFoodSheet> {
   void _onSearchChanged(String text) {
     _debounce?.cancel();
     setState(() {
-      // A new query invalidates the previous OFF results.
-      if (text.trim() != _offQuery) {
-        _offResults = null;
-        _offError = null;
+      // A new query invalidates the previous online results.
+      if (text.trim() != _onlineQuery) {
+        _onlineQuery = null;
+        _usdaResults = _offResults = null;
+        _usdaError = _offError = null;
       }
       if (text.trim().isEmpty) _results = null;
     });
@@ -604,29 +609,77 @@ class _AddFoodSheetState extends State<_AddFoodSheet> {
     });
   }
 
-  Future<void> _searchOpenFoodFacts() async {
+  Future<void> _searchOnline() async {
     final query = _search.text.trim();
-    if (query.isEmpty) return;
+    if (query.isEmpty || _onlineLoading) return;
     FocusScope.of(context).unfocus();
     setState(() {
-      _offLoading = true;
-      _offError = null;
-      _offQuery = query;
+      _onlineLoading = true;
+      _onlineQuery = query;
+      _usdaResults = _offResults = null;
+      _usdaError = _offError = null;
     });
-    try {
-      final results = await FoodService.searchOpenFoodFacts(query);
-      if (!mounted || _search.text.trim() != query) return;
-      setState(() {
-        _offResults = results;
-        _offLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _offLoading = false;
-        _offError = 'Search failed. Check your connection and try again.';
-      });
-    }
+
+    const failed = 'Search failed. Check your connection and try again.';
+    List<Food>? usda, off;
+    String? usdaError, offError;
+    await Future.wait([
+      if (FoodService.isUsdaConfigured)
+        () async {
+          try {
+            usda = await FoodService.searchUsda(query);
+          } catch (_) {
+            usdaError = failed;
+          }
+        }(),
+      () async {
+        try {
+          off = await FoodService.searchOpenFoodFacts(query);
+        } catch (_) {
+          offError = failed;
+        }
+      }(),
+    ]);
+
+    if (!mounted || _search.text.trim() != query) return;
+    setState(() {
+      _onlineLoading = false;
+      _usdaResults = usda;
+      _offResults = off;
+      _usdaError = usdaError;
+      _offError = offError;
+    });
+  }
+
+  List<Widget> _onlineSection(
+    String title,
+    String subtitle,
+    List<Food>? results,
+    String? error,
+    Color muted,
+    ThemeData theme,
+  ) {
+    return [
+      const SizedBox(height: 16),
+      Text(title, style: theme.textTheme.titleSmall),
+      Text(subtitle, style: TextStyle(fontSize: 12, color: muted)),
+      const SizedBox(height: 4),
+      if (error != null)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Text(error, style: TextStyle(color: theme.colorScheme.error)),
+        )
+      else if (results != null && results.isEmpty)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Text(
+            'No matches with nutrition data.',
+            style: TextStyle(color: muted),
+          ),
+        )
+      else if (results != null)
+        for (final food in results) _foodTile(food),
+    ];
   }
 
   Widget _foodTile(Food food) => ListTile(
@@ -694,7 +747,7 @@ class _AddFoodSheetState extends State<_AddFoodSheet> {
               controller: _search,
               onChanged: _onSearchChanged,
               textInputAction: TextInputAction.search,
-              onSubmitted: (_) => _searchOpenFoodFacts(),
+              onSubmitted: (_) => _searchOnline(),
               decoration: const InputDecoration(
                 hintText: 'Search foods',
                 prefixIcon: Icon(Icons.search),
@@ -728,36 +781,34 @@ class _AddFoodSheetState extends State<_AddFoodSheet> {
 
             if (searching) ...[
               const SizedBox(height: 16),
-              Text('Open Food Facts', style: theme.textTheme.titleSmall),
-              const SizedBox(height: 4),
-              if (_offLoading)
+              if (_onlineLoading)
                 const Padding(
                   padding: EdgeInsets.all(24),
                   child: Center(child: CircularProgressIndicator()),
                 )
-              else if (_offResults != null) ...[
-                if (_offResults!.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: Text(
-                      'No products with nutrition data found.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: muted),
-                    ),
-                  )
-                else
-                  for (final food in _offResults!) _foodTile(food),
-              ] else ...[
-                if (_offError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(_offError!,
-                        style: TextStyle(color: theme.colorScheme.error)),
-                  ),
+              else if (_onlineQuery == null)
                 OutlinedButton.icon(
                   icon: const Icon(Icons.public),
-                  label: Text('Search Open Food Facts for "${_search.text.trim()}"'),
-                  onPressed: _searchOpenFoodFacts,
+                  label: Text('Search online for "${_search.text.trim()}"'),
+                  onPressed: _searchOnline,
+                )
+              else ...[
+                if (FoodService.isUsdaConfigured)
+                  ..._onlineSection(
+                    'Generic foods',
+                    'USDA FoodData Central',
+                    _usdaResults,
+                    _usdaError,
+                    muted,
+                    theme,
+                  ),
+                ..._onlineSection(
+                  'Packaged products',
+                  'Open Food Facts',
+                  _offResults,
+                  _offError,
+                  muted,
+                  theme,
                 ),
               ],
             ],
@@ -852,7 +903,11 @@ class _AmountDialogState extends State<_AmountDialog> {
               children: [
                 if (food.servingG != null)
                   ActionChip(
-                    label: Text('1 serving (${_formatGrams(food.servingG!)} g)'),
+                    label: Text(
+                      '${food.servingLabel ?? '1 serving'} '
+                      '(${_formatGrams(food.servingG!)} g)',
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     onPressed: () => _setGrams(food.servingG!),
                   ),
                 ActionChip(
@@ -879,10 +934,12 @@ class _AmountDialogState extends State<_AmountDialog> {
               grams == null ? '— kcal' : '${food.kcalFor(grams).round()} kcal',
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            if (food.isFromOpenFoodFacts) ...[
+            if (food.isFromOpenFoodFacts || food.isFromUsda) ...[
               const SizedBox(height: 8),
               Text(
-                'Data from Open Food Facts',
+                food.isFromUsda
+                    ? 'Data from USDA FoodData Central'
+                    : 'Data from Open Food Facts',
                 style: TextStyle(fontSize: 11, color: muted),
               ),
             ],

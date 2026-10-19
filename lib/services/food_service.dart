@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
+import '../config/api_keys.dart';
 import '../database/app_database.dart';
 import '../models/food.dart';
 import '../models/meal_log.dart';
@@ -88,25 +89,73 @@ class FoodService {
     }
   }
 
-  /// Makes sure an Open Food Facts product has a row in our foods table
-  /// (search results arrive without one).
+  /// Makes sure an Open Food Facts or USDA food has a row in our foods
+  /// table (search results arrive without one).
   static Future<Food> ensureCached(Food food) async {
     if (food.id != null) return food;
+
+    final usda = food.isFromUsda;
+    final existing = await _client
+        .from('foods')
+        .select()
+        .eq('source', food.source)
+        .eq(usda ? 'fdc_id' : 'barcode', usda ? food.fdcId! : food.barcode!)
+        .maybeSingle();
+    if (existing != null) return Food.fromMap(existing);
+
+    // USDA search results don't include portions; the detail call does.
+    var toInsert = food;
+    if (usda) {
+      final (grams, label) = await _fetchUsdaPortion(food.fdcId!);
+      toInsert = food.withServing(grams, label);
+    }
+
     try {
-      final row =
-          await _client.from('foods').insert(food.toInsertMap()).select().single();
+      final row = await _client
+          .from('foods')
+          .insert(toInsert.toInsertMap())
+          .select()
+          .single();
       return Food.fromMap(row);
     } on PostgrestException catch (e) {
-      // 23505 = already cached (by us or another user) — use that row.
+      // 23505 = another user cached it a moment ago — use their row.
       if (e.code != '23505') rethrow;
       final row = await _client
           .from('foods')
           .select()
-          .eq('source', 'off')
-          .eq('barcode', food.barcode!)
+          .eq('source', food.source)
+          .eq(usda ? 'fdc_id' : 'barcode', usda ? food.fdcId! : food.barcode!)
           .single();
       return Food.fromMap(row);
     }
+  }
+
+  static bool get isUsdaConfigured => usdaApiKey.isNotEmpty;
+
+  /// Searches USDA FoodData Central for generic foods (Foundation and SR
+  /// Legacy — no US branded products, OFF covers those).
+  /// Results have no id yet — pass the chosen one through [ensureCached].
+  static Future<List<Food>> searchUsda(String query) async {
+    final q = query.trim();
+    if (q.isEmpty || !isUsdaConfigured) return [];
+
+    final uri = Uri.https('api.nal.usda.gov', '/fdc/v1/foods/search', {
+      'api_key': usdaApiKey,
+      'query': q,
+      'dataType': 'Foundation,SR Legacy',
+      'pageSize': '30',
+    });
+    final res = await http.get(uri).timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) {
+      throw Exception('USDA search failed (${res.statusCode})');
+    }
+
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final foods = (body['foods'] as List?) ?? [];
+    return foods
+        .map((f) => _foodFromUsda(f as Map<String, dynamic>))
+        .whereType<Food>()
+        .toList();
   }
 
   /// Searches foods already in our database — the user's custom foods and
@@ -207,6 +256,7 @@ class FoodService {
       sugar100g: Value(food.sugar100g),
       salt100g: Value(food.salt100g),
       servingG: Value(food.servingG),
+      servingLabel: Value(food.servingLabel),
     ));
     unawaited(syncPending());
   }
@@ -376,6 +426,7 @@ class FoodService {
         sugar100g: e.sugar100g,
         salt100g: e.salt100g,
         servingG: e.servingG,
+        servingLabel: e.servingLabel,
       );
 
   static MealLog _mealLogFromEntry(MealEntry e) => MealLog(
@@ -407,6 +458,7 @@ class FoodService {
       sugar100g: Value(f.sugar100g),
       salt100g: Value(f.salt100g),
       servingG: Value(f.servingG),
+      servingLabel: Value(f.servingLabel),
       synced: const Value(true),
     );
   }
@@ -499,6 +551,106 @@ class FoodService {
       servingG: _num(product['serving_quantity']),
       imageUrl: product['image_front_small_url'] as String?,
     );
+  }
+
+  // USDA nutrient ids. Search results give nutrients per 100 g for
+  // Foundation and SR Legacy foods.
+  static const _usdaKcal = 1008;
+  static const _usdaKcalAtwaterGeneral = 2047;
+  static const _usdaKcalAtwaterSpecific = 2048;
+  static const _usdaKj = 1062;
+  static const _usdaProtein = 1003;
+  static const _usdaFat = 1004;
+  static const _usdaCarbs = 1005;
+  static const _usdaFiber = 1079;
+  static const _usdaSugars = 2000;
+  static const _usdaSodiumMg = 1093;
+
+  static Food? _foodFromUsda(Map<String, dynamic> f) {
+    final fdcId = (f['fdcId'] as num?)?.toInt();
+    final name = (f['description'] as String?)?.trim();
+
+    final values = <int, double>{};
+    for (final n in (f['foodNutrients'] as List? ?? [])) {
+      final id = (n['nutrientId'] as num?)?.toInt();
+      final value = _num(n['value']);
+      if (id != null && value != null) values[id] = value;
+    }
+
+    // Some Foundation foods only report Atwater energy, or only kJ.
+    final kj = values[_usdaKj];
+    final kcal = values[_usdaKcal] ??
+        values[_usdaKcalAtwaterSpecific] ??
+        values[_usdaKcalAtwaterGeneral] ??
+        (kj != null ? kj / 4.184 : null);
+    if (fdcId == null || name == null || name.isEmpty || kcal == null) {
+      return null;
+    }
+
+    final sodiumMg = values[_usdaSodiumMg];
+    return Food(
+      source: 'usda',
+      fdcId: fdcId,
+      name: name,
+      kcal100g: kcal,
+      protein100g: values[_usdaProtein],
+      carbs100g: values[_usdaCarbs],
+      fat100g: values[_usdaFat],
+      fiber100g: values[_usdaFiber],
+      sugar100g: values[_usdaSugars],
+      // Salt ≈ sodium × 2.5
+      salt100g: sodiumMg == null ? null : sodiumMg * 2.5 / 1000,
+    );
+  }
+
+  /// The food's most useful household portion, e.g. (50.3, "1 egg, whole
+  /// without shell"). (null, null) if none or the call fails — the food is
+  /// still usable by weight.
+  static Future<(double?, String?)> _fetchUsdaPortion(int fdcId) async {
+    try {
+      final uri = Uri.https(
+          'api.nal.usda.gov', '/fdc/v1/food/$fdcId', {'api_key': usdaApiKey});
+      final res = await http.get(uri).timeout(const Duration(seconds: 15));
+      if (res.statusCode != 200) return (null, null);
+
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      final portions = (body['foodPortions'] as List? ?? [])
+          .cast<Map<String, dynamic>>()
+          .where((p) => _num(p['gramWeight']) != null)
+          .toList();
+
+      String unitOf(Map<String, dynamic> p) =>
+          (p['measureUnit'] as Map<String, dynamic>?)?['name'] as String? ?? '';
+      // RACC is a regulatory reference amount, not a real portion.
+      final real = portions.where((p) => unitOf(p) != 'RACC').toList();
+      if (real.isEmpty) return (null, null);
+
+      // Prefer a single unit ("1 egg") over fractions or cups.
+      real.sort((a, b) {
+        final aOne = _num(a['amount']) == 1 ? 0 : 1;
+        final bOne = _num(b['amount']) == 1 ? 0 : 1;
+        return aOne - bOne;
+      });
+      final p = real.first;
+
+      final amount = _num(p['amount']) ?? 1;
+      final unit = unitOf(p);
+      final detail = (p['modifier'] as String?) ??
+          (p['portionDescription'] as String?) ??
+          '';
+      final label = [
+        amount == amount.roundToDouble()
+            ? amount.toInt().toString()
+            : amount.toString(),
+        if (unit.isNotEmpty && unit != 'undetermined') unit,
+        if (detail.isNotEmpty) detail,
+      ].join(' ');
+
+      return (_num(p['gramWeight']), label);
+    } catch (e) {
+      debugPrint('USDA portion lookup failed for $fdcId: $e');
+      return (null, null);
+    }
   }
 
   // OFF values arrive as numbers or numeric strings.

@@ -23,7 +23,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase._internal() : super(_openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   late final ExerciseLogsDao exerciseLogsDao =
   ExerciseLogsDao(this);
@@ -43,6 +43,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 3) {
         await m.createTable(mealEntries);
+      } else if (from < 4) {
+        // v3 devices already have the table, minus this column.
+        await m.addColumn(mealEntries, mealEntries.servingLabel);
       }
     },
   );
