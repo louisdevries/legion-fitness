@@ -57,20 +57,25 @@ class _PhotoCompareScreenState extends State<PhotoCompareScreen> {
                   left: slider * constraints.maxWidth,
                   top: 0,
                   bottom: 0,
-                  child: Container(width: 3, color: Colors.white),
+                  child: Container(width: 3, color: const Color(0xFFC8F135)),
                 ),
 
                 // Handle
                 Positioned(
-                  left: slider * constraints.maxWidth - 12,
-                  top: constraints.maxHeight / 2 - 12,
+                  left: slider * constraints.maxWidth - 18,
+                  top: constraints.maxHeight / 2 - 18,
                   child: Container(
-                    width: 24,
-                    height: 24,
+                    width: 36,
+                    height: 36,
                     decoration: const BoxDecoration(
-                      color: Colors.white,
+                      color: Color(0xFFC8F135),
                       shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(color: Colors.black38, blurRadius: 6),
+                      ],
                     ),
+                    child: const Icon(Icons.compare_arrows,
+                        size: 20, color: Color(0xFF0E1015)),
                   ),
                 ),
               ],

@@ -5,6 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'exercise_runner_screen.dart';
 import '../main.dart';
+import '../theme/app_theme.dart';
+import '../utils/exercise_category_utils.dart';
+import '../widgets/app_ui.dart';
 
 class ExercisePreviewScreen extends StatefulWidget {
   final List<Map<String, dynamic>> exercises;
@@ -175,31 +178,29 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
       quantityLabel = '$sets sets × $minQ–$maxQ $unit';
     }
 
+    final c = AppColors.of(context);
     return Card(
       key: ValueKey(ex['id']),
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
         contentPadding:
-        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
 
         leading: ex['media_url'] != null &&
             ex['media_url'].toString().isNotEmpty
             ? ClipRRect(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           child: CachedNetworkImage(
             imageUrl: ex['media_url'],
-            width: 60,
-            height: 60,
+            width: 56,
+            height: 56,
             fit: BoxFit.cover,
           ),
         )
-            : const SizedBox(
-          width: 60,
-          height: 60,
-          child: Icon(Icons.fitness_center, size: 30),
-        ),
+            : const AppIconBadge(Icons.fitness_center, size: 56),
 
-        title: Text(ex['name'] ?? 'Exercise'),
+        title: Text(ex['name'] ?? 'Exercise',
+            style: const TextStyle(fontWeight: FontWeight.w700)),
         subtitle: (ex['tempo'] != null && (ex['tempo'] as String).isNotEmpty)
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -229,7 +230,7 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
           },
           child: ReorderableDragStartListener(
             index: index,
-            child: const Icon(Icons.drag_handle, color: Colors.grey),
+            child: Icon(Icons.drag_handle, color: c.muted),
           ),
         ),
       ),
@@ -247,13 +248,20 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(top: 16, bottom: 8),
-          child: Text(
-            _categoryLabels[category]!,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+          padding: const EdgeInsets.only(top: 16, bottom: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 4,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: ExerciseCategoryUtils.getColor(category),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(_categoryLabels[category]!, style: appDisplay(context, 22)),
+            ],
           ),
         ),
 
@@ -325,25 +333,35 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
   Widget build(BuildContext context) {
     if (isStarting) {
       return Scaffold(
-        appBar: AppBar(title: const Text("Get Ready")),
+        appBar: AppBar(title: const Text("Get ready")),
         body: Center(
-          child: Text(
-            "$countdown",
-            style: const TextStyle(fontSize: 80, fontWeight: FontWeight.bold),
+          child: Container(
+            width: 200,
+            height: 200,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.of(context).accent,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              "$countdown",
+              style: appDisplay(context, 110,
+                  color: AppColors.of(context).onAccent),
+            ),
           ),
         ),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Today's Exercises")),
+      appBar: AppBar(title: const Text("Today's exercises")),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            const Text(
-              "Drag to reorder within each section",
-              style: TextStyle(color: Colors.grey),
+            Text(
+              "Hold and drag to reorder within each section",
+              style: TextStyle(color: AppColors.of(context).muted),
             ),
             const SizedBox(height: 8),
 
@@ -365,9 +383,12 @@ class _ExercisePreviewScreenState extends State<ExercisePreviewScreen> {
 
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(56)),
                 onPressed: startExerciseCountdown,
-                child: const Text("Start Exercise"),
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: const Text("Start workout"),
               ),
             ),
           ],

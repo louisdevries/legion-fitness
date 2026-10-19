@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../theme/app_theme.dart';
 
 /// Compact horizontal pill timer used during exercises.
 ///
@@ -60,10 +61,11 @@ class ProgressRing extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
+    final c = AppColors.of(context);
     final showTime = isTimed || isResting;
-    final accent = isPaused
-        ? Colors.orange
-        : (isResting ? Colors.green : cs.primary);
+    // Foreground accent (icons/text) and fill (bars) — amber when paused.
+    final accent = isPaused ? c.premium : c.accentText;
+    final fill = isPaused ? c.premium : c.accent;
 
     final canPause = showTime && onTogglePause != null;
     final canAdjust = showTime && onMinus != null && onPlus != null && !countUp;
@@ -72,12 +74,12 @@ class ProgressRing extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
+        color: c.card,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isPaused
-              ? Colors.orange.withValues(alpha: 0.5)
-              : cs.onSurface.withValues(alpha: 0.08),
+              ? c.premium.withValues(alpha: 0.6)
+              : c.cardBorder,
           width: isPaused ? 1.5 : 1,
         ),
       ),
@@ -112,11 +114,12 @@ class ProgressRing extends StatelessWidget {
                         Text(
                           showTime ? '$_displaySeconds' : quantityDisplay,
                           style: TextStyle(
+                            fontFamily: AppTheme.displayFont,
                             fontSize: showTime
-                                ? 36
-                                : (quantityDisplay.length > 4 ? 22 : 36),
+                                ? 44
+                                : (quantityDisplay.length > 4 ? 28 : 44),
                             height: 1.0,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w800,
                             color: cs.onSurface,
                             fontFeatures: const [FontFeature.tabularFigures()],
                           ),
@@ -146,11 +149,9 @@ class ProgressRing extends StatelessWidget {
                           : 'reps',
                       style: TextStyle(
                         fontSize: 12,
-                        color: isPaused
-                            ? Colors.orange
-                            : cs.onSurface.withValues(alpha: 0.6),
+                        color: isPaused ? c.premium : c.muted,
                         fontWeight:
-                        isPaused ? FontWeight.w600 : FontWeight.w500,
+                        isPaused ? FontWeight.w700 : FontWeight.w600,
                         letterSpacing: 0.4,
                       ),
                     ),
@@ -198,8 +199,8 @@ class ProgressRing extends StatelessWidget {
             child: LinearProgressIndicator(
               value: showTime ? _progress : 1.0,
               minHeight: 6,
-              backgroundColor: cs.onSurface.withValues(alpha: 0.08),
-              valueColor: AlwaysStoppedAnimation(accent),
+              backgroundColor: c.track,
+              valueColor: AlwaysStoppedAnimation(fill),
             ),
           ),
           if (previousLabel != null) ...[
@@ -294,7 +295,9 @@ class ProgressRingCircle extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final accent = isPaused ? Colors.orange : Colors.green;
+    final c = AppColors.of(context);
+    final accent = isPaused ? c.premium : c.accentText;
+    final fill = isPaused ? c.premium : c.accent;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -311,8 +314,7 @@ class ProgressRingCircle extends StatelessWidget {
                 child: CircularProgressIndicator(
                   value: 1,
                   strokeWidth: 12,
-                  valueColor: AlwaysStoppedAnimation(
-                      cs.onSurface.withValues(alpha: 0.08)),
+                  valueColor: AlwaysStoppedAnimation(c.track),
                 ),
               ),
               SizedBox(
@@ -321,7 +323,8 @@ class ProgressRingCircle extends StatelessWidget {
                 child: CircularProgressIndicator(
                   value: _progress,
                   strokeWidth: 12,
-                  valueColor: AlwaysStoppedAnimation(accent),
+                  strokeCap: StrokeCap.round,
+                  valueColor: AlwaysStoppedAnimation(fill),
                 ),
               ),
               Column(
@@ -330,8 +333,9 @@ class ProgressRingCircle extends StatelessWidget {
                   Text(
                     '$remainingSeconds',
                     style: TextStyle(
-                      fontSize: 64,
-                      fontWeight: FontWeight.bold,
+                      fontFamily: AppTheme.displayFont,
+                      fontSize: 80,
+                      fontWeight: FontWeight.w800,
                       color: cs.onSurface,
                       fontFeatures: const [FontFeature.tabularFigures()],
                       height: 1.0,
@@ -342,9 +346,7 @@ class ProgressRingCircle extends StatelessWidget {
                     isPaused ? 'paused' : 'seconds',
                     style: TextStyle(
                       fontSize: 14,
-                      color: isPaused
-                          ? Colors.orange
-                          : cs.onSurface.withValues(alpha: 0.6),
+                      color: isPaused ? c.premium : c.muted,
                       fontWeight: FontWeight.w500,
                       letterSpacing: 0.5,
                     ),

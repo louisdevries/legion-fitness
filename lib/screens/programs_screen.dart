@@ -7,6 +7,8 @@ import 'week_day_selector_screen.dart';
 import 'custom_exercise_screen.dart';
 import 'exercise_preview_screen.dart';
 import '../utils/user_prefs.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
 
 enum _GenderFilter { men, women }
 
@@ -78,7 +80,8 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            child: Text('Delete',
+                style: TextStyle(color: AppColors.of(context).warning)),
           ),
         ],
       ),
@@ -92,9 +95,6 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (ctx) => _CustomProgramDetailSheet(
         program: program,
         onDelete: () {
@@ -176,11 +176,7 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
                   padding: const EdgeInsets.only(bottom: 24),
                   child: Text(
                     'No custom programs yet. Tap New to create one.',
-                    style: TextStyle(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.5)),
+                    style: TextStyle(color: AppColors.of(context).muted),
                   ),
                 )
               else
@@ -272,15 +268,7 @@ class _SectionHeader extends StatelessWidget {
   const _SectionHeader({required this.text});
 
   @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize: 20,
-        fontWeight: FontWeight.bold,
-      ),
-    );
-  }
+  Widget build(BuildContext context) => AppSectionTitle(text);
 }
 
 // =====================================================================
@@ -333,12 +321,16 @@ class _FilterPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     final cs = Theme.of(context).colorScheme;
     return Material(
-      color: isSelected ? cs.primary : cs.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(28),
-      child: InkWell(
+      color: isSelected ? c.accent : c.card,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(28),
+        side: BorderSide(color: isSelected ? c.accent : c.cardBorder),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
         onTap: onTap,
         child: Padding(
           padding:
@@ -347,8 +339,8 @@ class _FilterPill extends StatelessWidget {
             child: Text(
               label,
               style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: isSelected ? cs.onPrimary : cs.onSurface,
+                fontWeight: FontWeight.w800,
+                color: isSelected ? c.onAccent : cs.onSurface,
               ),
             ),
           ),
@@ -375,88 +367,57 @@ class _CustomProgramCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     final totalSessions = program.weeks * program.daysPerWeek;
     final doneSessions = program.completedSessions.length;
     final progress = totalSessions > 0 ? doneSessions / totalSessions : 0.0;
     final nextLabel = program.isComplete
         ? 'Complete'
-        : 'Week ${program.nextWeek} · Day ${program.nextDay}';
+        : 'Next: Week ${program.nextWeek} · Day ${program.nextDay}';
 
-    return GestureDetector(
+    return AppCard(
       onTap: onTap,
-      child: Card(
-        margin: EdgeInsets.zero,
-        elevation: 3,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        clipBehavior: Clip.antiAlias,
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                cs.primary.withValues(alpha: 0.85),
-                cs.primary.withValues(alpha: 0.55),
+      padding: const EdgeInsets.fromLTRB(16, 16, 4, 16),
+      child: Row(
+        children: [
+          const AppIconBadge(Icons.fitness_center, size: 44),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  program.name,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${program.weeks} wks · ${program.daysPerWeek} days/wk · ${program.totalExercises} exercises',
+                  style: TextStyle(color: c.muted, fontSize: 12),
+                ),
+                const SizedBox(height: 10),
+                AppProgressBar(progress, height: 5),
+                const SizedBox(height: 6),
+                Text(
+                  nextLabel,
+                  style: TextStyle(
+                    color: c.accentText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ],
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
             ),
           ),
-          padding: const EdgeInsets.fromLTRB(20, 16, 8, 16),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.fitness_center,
-                    color: Colors.white, size: 22),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      program.name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${program.weeks} wks · ${program.daysPerWeek} days/wk · ${program.totalExercises} exercises',
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                    const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: progress,
-                        backgroundColor: Colors.white24,
-                        color: Colors.white,
-                        minHeight: 4,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      nextLabel,
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline, color: Colors.white70),
-                onPressed: onDelete,
-              ),
-            ],
+          IconButton(
+            icon: Icon(Icons.delete_outline, color: c.muted),
+            onPressed: onDelete,
           ),
-        ),
+        ],
       ),
     );
   }
@@ -494,9 +455,10 @@ class _CustomProgramDetailSheetState
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     final p = widget.program;
+    Widget heading(String text) => Text(text, style: appDisplay(context, 22));
 
     return DraggableScrollableSheet(
       expand: false,
@@ -524,21 +486,17 @@ class _CustomProgramDetailSheetState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(p.name,
-                          style: const TextStyle(
-                              fontSize: 20, fontWeight: FontWeight.bold)),
+                      Text(p.name, style: appDisplay(context, 28)),
                       const SizedBox(height: 2),
                       Text(
                         '${p.weeks} weeks · ${p.daysPerWeek} days/week · ${p.totalExercises} exercises',
-                        style: TextStyle(
-                            color: cs.onSurface.withValues(alpha: 0.55),
-                            fontSize: 13),
+                        style: TextStyle(color: c.muted, fontSize: 13),
                       ),
                     ],
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  icon: Icon(Icons.delete_outline, color: c.warning),
                   onPressed: widget.onDelete,
                 ),
               ],
@@ -552,9 +510,7 @@ class _CustomProgramDetailSheetState
               padding: const EdgeInsets.symmetric(horizontal: 16),
               children: [
                 // ── Week selector ──
-                Text('Select Week',
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.bold)),
+                heading('Select week'),
                 const SizedBox(height: 10),
                 GridView.builder(
                   shrinkWrap: true,
@@ -583,27 +539,25 @@ class _CustomProgramDetailSheetState
                       child: Container(
                         decoration: BoxDecoration(
                           color: selected
-                              ? cs.primary
+                              ? c.accent
                               : locked
-                                  ? cs.surfaceContainerHighest
-                                  : cs.surface,
-                          borderRadius: BorderRadius.circular(8),
+                                  ? c.track
+                                  : c.card,
+                          borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: selected
-                                ? cs.primary
-                                : cs.onSurface.withValues(alpha: 0.12),
+                            color: selected ? c.accent : c.cardBorder,
                           ),
                         ),
                         child: Center(
                           child: Text(
                             'Wk $week',
                             style: TextStyle(
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w800,
                               fontSize: 13,
                               color: selected
-                                  ? cs.onPrimary
+                                  ? c.onAccent
                                   : locked
-                                      ? cs.onSurface.withValues(alpha: 0.35)
+                                      ? c.muted
                                       : cs.onSurface,
                             ),
                           ),
@@ -614,9 +568,7 @@ class _CustomProgramDetailSheetState
                 ),
 
                 const SizedBox(height: 20),
-                Text('Select Day',
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.bold)),
+                heading('Select day'),
                 const SizedBox(height: 10),
 
                 // ── Day list ──
@@ -628,38 +580,29 @@ class _CustomProgramDetailSheetState
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
                     decoration: BoxDecoration(
-                      color: done
-                          ? cs.secondaryContainer
-                          : locked
-                              ? cs.surfaceContainerHighest
-                              : cs.surface,
-                      borderRadius: BorderRadius.circular(14),
+                      color: locked ? c.track : c.card,
+                      borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                          color: cs.onSurface.withValues(alpha: 0.08)),
+                          color: done
+                              ? c.accent.withValues(alpha: 0.6)
+                              : c.cardBorder),
                     ),
                     child: ListTile(
                       title: Text('Day $day',
                           style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: locked
-                                ? cs.onSurface.withValues(alpha: 0.35)
-                                : null,
+                            fontWeight: FontWeight.w800,
+                            color: locked ? c.muted : null,
                           )),
                       subtitle: Text(
                         '${p.totalExercises} exercises',
-                        style: TextStyle(
-                          color: locked
-                              ? cs.onSurface.withValues(alpha: 0.25)
-                              : cs.onSurface.withValues(alpha: 0.6),
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: c.muted, fontSize: 12),
                       ),
                       trailing: done
-                          ? const Icon(Icons.check_circle,
-                              color: Colors.green)
+                          ? Icon(Icons.check_circle, color: c.accentText)
                           : locked
-                              ? const Icon(Icons.lock_outline)
-                              : const Icon(Icons.arrow_forward_ios, size: 16),
+                              ? Icon(Icons.lock_outline, color: c.muted)
+                              : Icon(Icons.arrow_forward_ios,
+                                  size: 16, color: c.muted),
                       onTap: locked
                           ? null
                           : () => _startWorkout(_selectedWeek, day),
@@ -669,9 +612,7 @@ class _CustomProgramDetailSheetState
 
                 const SizedBox(height: 16),
                 // ── Exercise list ──
-                Text('Exercises in this workout',
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.bold)),
+                heading('Exercises in this workout'),
                 const SizedBox(height: 8),
                 if (p.warmup.isNotEmpty) ...[
                   _sectionLabel('Warm-up'),
@@ -712,12 +653,13 @@ class _CustomProgramDetailSheetState
   }
 
   Widget _sectionLabel(String label) => Padding(
-        padding: const EdgeInsets.only(top: 8, bottom: 2),
-        child: Text(label,
-            style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-                color: Colors.grey)),
+        padding: const EdgeInsets.only(top: 10, bottom: 2),
+        child: Text(label.toUpperCase(),
+            style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 11,
+                letterSpacing: 1.2,
+                color: AppColors.of(context).muted)),
       );
 
   List<Widget> _exerciseRows(List<LocalExerciseEntry> entries) =>
@@ -749,19 +691,16 @@ class _ProgramCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     return GestureDetector(
       onTap: onTap,
       child: Card(
         margin: EdgeInsets.zero,
-        elevation: 3,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           side: isActive
-              ? BorderSide(
-                  color: Theme.of(context).colorScheme.primary,
-                  width: 2,
-                )
-              : BorderSide.none,
+              ? BorderSide(color: c.accent, width: 2)
+              : BorderSide(color: c.cardBorder),
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
@@ -772,8 +711,8 @@ class _ProgramCard extends StatelessWidget {
                 program.imageUrl,
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stack) => Container(
-                  color: Colors.grey.shade300,
-                  child: const Icon(Icons.image, size: 50),
+                  color: c.track,
+                  child: Icon(Icons.fitness_center, size: 44, color: c.muted),
                 ),
               ),
             ),
@@ -799,11 +738,8 @@ class _ProgramCard extends StatelessWidget {
                 padding: const EdgeInsets.all(16),
                 child: Text(
                   program.name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    shadows: [
+                  style: appDisplay(context, 28, color: Colors.white).copyWith(
+                    shadows: const [
                       Shadow(color: Colors.black54, blurRadius: 4),
                     ],
                   ),
@@ -811,37 +747,10 @@ class _ProgramCard extends StatelessWidget {
               ),
             ),
             if (isActive)
-              Positioned(
+              const Positioned(
                 top: 12,
                 right: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.check_circle,
-                        size: 14,
-                        color: Theme.of(context).colorScheme.onPrimary,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'ACTIVE',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.onPrimary,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                child: AppPill('ACTIVE', icon: Icons.check_circle, filled: true),
               ),
           ],
         ),

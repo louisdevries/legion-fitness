@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_service.dart';
 import '../main.dart';
@@ -120,15 +122,32 @@ class _LoginScreenState extends State<LoginScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Column(
           children: [
-            const SizedBox(height: 12),
-            Image.asset('assets/images/logo.png', height: 260),
-            const SizedBox(height: 32),
+            const SizedBox(height: 8),
+            Image.asset('assets/images/logo.png', height: 200),
+            const SizedBox(height: 20),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                isLogin ? 'Welcome back' : 'Create your account',
+                style: appDisplay(context, 34),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                isLogin
+                    ? 'Log in to pick up where you left off.'
+                    : 'Track workouts, runs and meals in one place.',
+                style: TextStyle(color: AppColors.of(context).muted),
+              ),
+            ),
+            const SizedBox(height: 24),
             if (!isLogin) ...[
               TextField(
                 controller: _nameController,
                 decoration: const InputDecoration(
                   labelText: 'Name',
-                  border: OutlineInputBorder(),
                 ),
                 textInputAction: TextInputAction.next,
               ),
@@ -138,7 +157,6 @@ class _LoginScreenState extends State<LoginScreen> {
               controller: _emailController,
               decoration: const InputDecoration(
                 labelText: 'Email',
-                border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
@@ -148,7 +166,6 @@ class _LoginScreenState extends State<LoginScreen> {
               controller: _passwordController,
               decoration: InputDecoration(
                 labelText: 'Password',
-                border: const OutlineInputBorder(),
                 suffixIcon: IconButton(
                   icon: Icon(
                     _passwordVisible
@@ -171,7 +188,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 controller: _confirmPasswordController,
                 decoration: InputDecoration(
                   labelText: 'Confirm Password',
-                  border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _confirmPasswordVisible
@@ -191,7 +207,7 @@ class _LoginScreenState extends State<LoginScreen> {
             if (errorMessage != null) ...[
               Text(
                 errorMessage!,
-                style: const TextStyle(color: Colors.red),
+                style: const TextStyle(color: AppTheme.danger),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 12),
@@ -200,9 +216,11 @@ class _LoginScreenState extends State<LoginScreen> {
               width: double.infinity,
               child: isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : ElevatedButton(
+                  : FilledButton(
+                      style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(54)),
                       onPressed: _submit,
-                      child: Text(isLogin ? 'Login' : 'Register'),
+                      child: Text(isLogin ? 'Log in' : 'Create account'),
                     ),
             ),
             TextButton(

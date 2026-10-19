@@ -9,6 +9,8 @@ import '../screens/workout_reminder_screen.dart';
 import 'rest_timer_settings_screen.dart';
 import 'achievements_screen.dart';
 import '../widgets/xp_widgets.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -49,147 +51,135 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!isLoggedIn) {
       return _buildLoggedOut(context);
     }
-    const ProfileXpSection();
-    const SizedBox(height: 24);
+
+    void push(Widget screen) => Navigator.push(
+        context, MaterialPageRoute(builder: (_) => screen));
 
     return Scaffold(
-
       body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
           _buildAccountHeader(),
+          const SizedBox(height: 12),
+          const ProfileXpSection(),
 
-          _buildSectionHeader("Account"),
-          _buildTile(
-            icon: Icons.person,
-            title: "Name",
-            subtitle: userName ?? "Set your name",
-            onTap: () {
-              // TODO: Change name screen
-            },
-          ),
-          _buildTile(
-            icon: Icons.email,
-            title: "Email",
-            subtitle: userEmail ?? "",
-            onTap: _showChangeEmailDialog,
-          ),
-          _buildTile(
-            icon: Icons.lock,
-            title: "Change Password",
-            onTap: _showChangePasswordDialog,
-          ),
+          _buildGroup("Account", [
+            _buildTile(
+              icon: Icons.person_outline,
+              title: "Name",
+              subtitle: userName ?? "Set your name",
+              enabled: false,
+            ),
+            _buildTile(
+              icon: Icons.mail_outline,
+              title: "Email",
+              subtitle: userEmail ?? "",
+              onTap: _showChangeEmailDialog,
+            ),
+            _buildTile(
+              icon: Icons.lock_outline,
+              title: "Change password",
+              onTap: _showChangePasswordDialog,
+            ),
+          ]),
 
-          _buildSectionHeader("Progress"),
-          _buildTile(
-            icon: Icons.emoji_events,
-            title: "Achievements",
-            subtitle: "View your unlocked milestones",
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const AchievementsScreen(),
-                ),
-              );
-            },
-          ),
+          _buildGroup("Progress & health", [
+            _buildTile(
+              icon: Icons.emoji_events_outlined,
+              title: "Achievements",
+              subtitle: "View your unlocked milestones",
+              onTap: () => push(const AchievementsScreen()),
+            ),
+            _buildTile(
+              icon: Icons.favorite_outline,
+              title: "Health profile",
+              subtitle: "Weight, height, goals",
+              onTap: () => push(const HealthProfileScreen()),
+            ),
+            _buildGoogleFitTile(),
+          ]),
 
-          _buildSectionHeader("Health"),
-          _buildTile(
-            icon: Icons.favorite,
-            title: "Health Profile",
-            subtitle: "Weight, height, goals",
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const HealthProfileScreen(),
-                ),
-              );
-            },
-          ),
-          _buildGoogleFitTile(),
+          _buildGroup("Preferences", [
+            _buildTile(
+              icon: Icons.dark_mode_outlined,
+              title: "Appearance",
+              subtitle: switch (AppSettings.themeMode.value) {
+                ThemeMode.light => "Light",
+                ThemeMode.dark => "Dark",
+                ThemeMode.system => "Follow system",
+              },
+              onTap: _pickThemeMode,
+            ),
+            _buildTile(
+              icon: Icons.timer_outlined,
+              title: "Rest timer",
+              subtitle: "Default rest duration",
+              onTap: () => push(const RestTimerSettingsScreen()),
+            ),
+            _buildTile(
+              icon: Icons.notifications_none,
+              title: "Workout reminders",
+              subtitle: "Schedule weekly exercise alerts",
+              onTap: () => push(const WorkoutReminderScreen()),
+            ),
+          ]),
 
-          _buildSectionHeader("Preferences"),
-          _buildTile(
-            icon: Icons.dark_mode,
-            title: "Dark Mode",
-            subtitle: "System / Light / Dark",
-            onTap: () async {
-              final selected = await showModalBottomSheet<ThemeMode>(
-                context: context,
-                builder: (_) => Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ListTile(
-                      title: const Text("System"),
-                      onTap: () => Navigator.pop(context, ThemeMode.system),
-                    ),
-                    ListTile(
-                      title: const Text("Light"),
-                      onTap: () => Navigator.pop(context, ThemeMode.light),
-                    ),
-                    ListTile(
-                      title: const Text("Dark"),
-                      onTap: () => Navigator.pop(context, ThemeMode.dark),
-                    ),
-                  ],
-                ),
-              );
-              if (selected != null) {
-                await AppSettings.setThemeMode(selected);
-              }
-            },
-          ),
-          _buildTile(
-            icon: Icons.timer,
-            title: "Rest Timer",
-            subtitle: "Default rest duration",
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const RestTimerSettingsScreen(),
-                ),
-              );
-            },
-          ),
+          _buildGroup("Premium", [
+            _buildTile(
+              icon: Icons.workspace_premium_outlined,
+              iconColor: AppColors.of(context).premium,
+              title: "Premium program",
+              subtitle: "Get a program designed just for you",
+              onTap: () => push(const PremiumProgramScreen()),
+            ),
+          ]),
 
-          // ── Workout Reminder ──────────────────────────────────
-          _buildTile(
-            icon: Icons.notifications_active,
-            title: "Workout Reminders",
-            subtitle: "Schedule weekly exercise alerts",
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const WorkoutReminderScreen(),
-                ),
-              );
-            },
-          ),
-
-          _buildSectionHeader("Premium"),
-          _buildTile(
-            icon: Icons.workspace_premium,
-            title: "Premium Program",
-            subtitle: "Get a program designed just for you",
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const PremiumProgramScreen(),
-                ),
-              );
-            },
-          ),
-
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           _buildLogoutTile(),
         ],
       ),
     );
+  }
+
+  Future<void> _pickThemeMode() async {
+    final current = AppSettings.themeMode.value;
+    final selected = await showModalBottomSheet<ThemeMode>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 20, 8, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text('Appearance', style: appDisplay(ctx, 26)),
+              ),
+              const SizedBox(height: 8),
+              for (final (mode, label) in const [
+                (ThemeMode.system, 'Follow system'),
+                (ThemeMode.light, 'Light'),
+                (ThemeMode.dark, 'Dark'),
+              ])
+                ListTile(
+                  title: Text(label,
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  trailing: mode == current
+                      ? Icon(Icons.check_circle,
+                          color: AppColors.of(ctx).accentText)
+                      : null,
+                  onTap: () => Navigator.pop(ctx, mode),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected != null) {
+      await AppSettings.setThemeMode(selected);
+      if (mounted) setState(() {});
+    }
   }
 
   // ================= GOOGLE FIT =================
@@ -251,49 +241,72 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // ================= UI HELPERS =================
 
   Widget _buildAccountHeader() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Row(
-        children: [
-          const CircleAvatar(
-            radius: 28,
-            child: Icon(Icons.person, size: 32),
-          ),
-          const SizedBox(width: 16),
-          Column(
+    final c = AppColors.of(context);
+    final name = userName?.trim() ?? '';
+    final initial = name.isEmpty ? '?' : name[0].toUpperCase();
+
+    return Row(
+      children: [
+        Container(
+          width: 60,
+          height: 60,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: c.accent, shape: BoxShape.circle),
+          child: Text(initial, style: appDisplay(context, 30, color: c.onAccent)),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                userName ?? "",
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
+                name.isEmpty ? 'Your profile' : name,
+                style: appDisplay(context, 30),
+                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 userEmail ?? "",
-                style: const TextStyle(color: Colors.grey),
+                style: TextStyle(color: c.muted),
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-      child: Text(
-        title.toUpperCase(),
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.bold,
-          color: Colors.grey.shade600,
+  /// A titled group of settings rows inside one card.
+  Widget _buildGroup(String title, List<Widget> tiles) {
+    final c = AppColors.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 24, 4, 8),
+          child: Text(
+            title.toUpperCase(),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
+              color: c.muted,
+            ),
+          ),
         ),
-      ),
+        AppCard(
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              for (var i = 0; i < tiles.length; i++) ...[
+                if (i > 0) const Divider(height: 1, indent: 68),
+                tiles[i],
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -303,21 +316,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
     String? subtitle,
     VoidCallback? onTap,
     bool enabled = true,
+    Color? iconColor,
   }) {
+    final c = AppColors.of(context);
     return ListTile(
-      enabled: enabled,
-      leading: Icon(icon),
-      title: Text(title),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      leading: AppIconBadge(icon, size: 38, color: iconColor),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
       subtitle: subtitle != null ? Text(subtitle) : null,
-      trailing: enabled ? const Icon(Icons.chevron_right) : null,
+      trailing:
+          enabled && onTap != null ? Icon(Icons.chevron_right, color: c.muted) : null,
       onTap: enabled ? onTap : null,
     );
   }
 
   Widget _buildGoogleFitTile() {
     return ListTile(
-      leading: const Icon(Icons.monitor_heart),
-      title: const Text("Health Connect"),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      leading: const AppIconBadge(Icons.monitor_heart_outlined, size: 38),
+      title: const Text("Health Connect",
+          style: TextStyle(fontWeight: FontWeight.w700)),
       subtitle: Text(
         _googleFitEnabled ? "Connected — syncing daily steps" : "Not connected",
       ),
@@ -335,13 +353,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildLogoutTile() {
-    return ListTile(
-      leading: const Icon(Icons.logout, color: Colors.red),
-      title: const Text(
-        "Logout",
-        style: TextStyle(color: Colors.red),
+    final warning = AppColors.of(context).warning;
+    return OutlinedButton.icon(
+      icon: Icon(Icons.logout, color: warning),
+      label: Text("Log out", style: TextStyle(color: warning)),
+      style: OutlinedButton.styleFrom(
+        side: BorderSide(color: warning.withValues(alpha: 0.5)),
+        minimumSize: const Size.fromHeight(52),
       ),
-      onTap: () async {
+      onPressed: () async {
         await AuthService.logout();
         if (!mounted) return;
         setState(() {
@@ -354,27 +374,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildLoggedOut(BuildContext context) {
+    final c = AppColors.of(context);
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.person_outline, size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          const Text(
-            'You are not logged in',
-            style: TextStyle(fontSize: 18),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-              ).then((_) => _loadUser());
-            },
-            child: const Text("Login or Register"),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AppIconBadge(Icons.person_outline, size: 72, color: c.muted),
+            const SizedBox(height: 20),
+            Text('You’re not logged in', style: appDisplay(context, 28)),
+            const SizedBox(height: 8),
+            Text(
+              'Log in to save workouts, meals and progress across devices.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: c.muted),
+            ),
+            const SizedBox(height: 24),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52)),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                ).then((_) => _loadUser());
+              },
+              child: const Text("Log in or register"),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -445,7 +474,6 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
               obscureText: !_newVisible,
               decoration: InputDecoration(
                 labelText: 'New Password',
-                border: const OutlineInputBorder(),
                 suffixIcon: IconButton(
                   icon: Icon(
                       _newVisible ? Icons.visibility_off : Icons.visibility),
@@ -459,7 +487,6 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
               obscureText: !_confirmVisible,
               decoration: InputDecoration(
                 labelText: 'Confirm New Password',
-                border: const OutlineInputBorder(),
                 suffixIcon: IconButton(
                   icon: Icon(_confirmVisible
                       ? Icons.visibility_off
@@ -472,7 +499,7 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(_error!,
-                  style: const TextStyle(color: Colors.red),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                   textAlign: TextAlign.center),
             ],
           ],
@@ -559,19 +586,18 @@ class _ChangeEmailDialogState extends State<_ChangeEmailDialog> {
             keyboardType: TextInputType.emailAddress,
             decoration: const InputDecoration(
               labelText: 'New Email',
-              border: OutlineInputBorder(),
             ),
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(_error!,
-                style: const TextStyle(color: Colors.red),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
                 textAlign: TextAlign.center),
           ],
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'A confirmation link will be sent to your new email address.',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
+            style: TextStyle(fontSize: 12, color: AppColors.of(context).muted),
           ),
         ],
       ),

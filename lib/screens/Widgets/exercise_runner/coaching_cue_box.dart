@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../theme/app_theme.dart';
 
 class CoachingCueBox extends StatelessWidget {
   final String cues;
@@ -8,25 +9,28 @@ class CoachingCueBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (cues.isEmpty) return const SizedBox.shrink();
+    final c = AppColors.of(context);
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue.shade200),
+        color: c.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border(
+          left: BorderSide(color: c.accent, width: 4),
+          top: BorderSide(color: c.cardBorder),
+          right: BorderSide(color: c.cardBorder),
+          bottom: BorderSide(color: c.cardBorder),
+        ),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.tips_and_updates,
-              color: Colors.blue.shade700, size: 20),
-          const SizedBox(width: 8),
+          Icon(Icons.tips_and_updates, color: c.accentText, size: 20),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               cues,
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.blue.shade900,
-              ),
+              style: const TextStyle(fontSize: 13, height: 1.4),
             ),
           ),
         ],

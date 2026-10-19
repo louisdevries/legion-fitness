@@ -194,7 +194,7 @@ class _PremiumQuestionnaireScreenState
               controller: _ageController,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                  labelText: 'Age', border: OutlineInputBorder()),
+                  labelText: 'Age'),
             ),
           ),
           _buildStep(
@@ -264,7 +264,7 @@ class _PremiumQuestionnaireScreenState
               maxLines: 3,
               decoration: const InputDecoration(
                   labelText: 'Injuries / Concerns',
-                  border: OutlineInputBorder()),
+                  ),
             ),
           ),
         ],

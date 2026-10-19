@@ -10,14 +10,10 @@ class RestControls extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        ElevatedButton.icon(
+        OutlinedButton.icon(
           onPressed: onSkip,
-          icon: const Icon(Icons.skip_next),
-          label: const Text('Skip Rest'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.orange,
-            foregroundColor: Colors.white,
-          ),
+          icon: const Icon(Icons.skip_next_rounded),
+          label: const Text('Skip rest'),
         ),
       ],
     );

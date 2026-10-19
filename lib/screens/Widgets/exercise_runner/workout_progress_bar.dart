@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../theme/app_theme.dart';
+import '../../../widgets/app_ui.dart';
 
 class WorkoutProgressBar extends StatelessWidget {
   final int completed;
@@ -13,6 +15,7 @@ class WorkoutProgressBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final progress = total == 0 ? 0.0 : completed / total;
+    final c = AppColors.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -21,25 +24,23 @@ class WorkoutProgressBar extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'Workout Progress',
-              style: TextStyle(fontWeight: FontWeight.bold),
+            Text(
+              'WORKOUT PROGRESS',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 11,
+                letterSpacing: 1.2,
+                color: c.muted,
+              ),
             ),
-            Text('$completed / $total'),
+            Text('$completed / $total',
+                style: const TextStyle(fontWeight: FontWeight.w700)),
           ],
         ),
 
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
 
-        // Progress bar
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: LinearProgressIndicator(
-            value: progress,
-            minHeight: 8,
-            backgroundColor: Colors.grey.shade300,
-          ),
-        ),
+        AppProgressBar(progress, height: 8),
       ],
     );
   }

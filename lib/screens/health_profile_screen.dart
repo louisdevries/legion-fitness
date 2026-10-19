@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:developer' as developer;
 import '../main.dart'; // Import AppSettings for universal loading
@@ -163,43 +165,71 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
   }
 
   Color _bmiColor(double bmi) {
-    if (bmi < 18.5) return Colors.blue;
-    if (bmi < 25) return Colors.green;
-    if (bmi < 30) return Colors.orange;
-    return Colors.red;
+    final c = AppColors.of(context);
+    if (bmi < 18.5) return const Color(0xFF7FD1C2);
+    if (bmi < 25) return c.accent;
+    if (bmi < 30) return c.premium;
+    return AppTheme.danger;
+  }
+
+  String _bmiLabel(double bmi) {
+    if (bmi < 18.5) return 'Underweight';
+    if (bmi < 25) return 'Healthy range';
+    if (bmi < 30) return 'Overweight';
+    return 'Obese';
   }
 
   @override
   Widget build(BuildContext context) {
-    if (isLoading) return const Center(child: CircularProgressIndicator());
+    if (isLoading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text("Health profile")),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
 
     final bmi = _calculateBMI();
+    final c = AppColors.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Health Profile")),
+      appBar: AppBar(title: const Text("Health profile")),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // ================= BMI CARD =================
               if (bmi != null)
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        Text("BMI: ${bmi.toStringAsFixed(1)}",
-                            style: const TextStyle(
-                                fontSize: 20, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 8),
-                        LinearProgressIndicator(
-                          value: ((bmi.clamp(10, 40) - 10) / 30),
-                          color: _bmiColor(bmi),
-                        ),
-                      ],
-                    ),
+                AppCard(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('BMI', style: TextStyle(color: c.muted)),
+                              Text(bmi.toStringAsFixed(1),
+                                  style: appDisplay(context, 44)),
+                            ],
+                          ),
+                          const Spacer(),
+                          AppPill(_bmiLabel(bmi),
+                              filled: true, color: _bmiColor(bmi)),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      AppProgressBar(
+                        (bmi.clamp(10, 40) - 10) / 30,
+                        height: 8,
+                        color: _bmiColor(bmi),
+                      ),
+                    ],
                   ),
                 ),
 
@@ -244,42 +274,20 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
 
               // ================= CURRENT WEIGHT =================
               if (latestWeightKg != null)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+                AppCard(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   child: Row(
                     children: [
-                      Icon(Icons.monitor_weight_outlined,
-                          size: 20,
-                          color: Theme.of(context).colorScheme.primary),
+                      const AppIconBadge(Icons.monitor_weight_outlined),
                       const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Current Weight',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withValues(alpha: 0.6),
-                            ),
-                          ),
-                          Text(
-                            weightUnit == 'lbs'
-                                ? '${(latestWeightKg! * 2.20462).toStringAsFixed(1)} lbs'
-                                : '${latestWeightKg!.toStringAsFixed(1)} kg',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
+                      Text('Current weight', style: TextStyle(color: c.muted)),
+                      const Spacer(),
+                      Text(
+                        weightUnit == 'lbs'
+                            ? '${(latestWeightKg! * 2.20462).toStringAsFixed(1)} lbs'
+                            : '${latestWeightKg!.toStringAsFixed(1)} kg',
+                        style: appDisplay(context, 26),
                       ),
                     ],
                   ),
@@ -299,7 +307,9 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
 
               const SizedBox(height: 32),
 
-              ElevatedButton(
+              FilledButton(
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(54)),
                 onPressed: _saveProfile,
                 child: const Text("Save"),
               ),

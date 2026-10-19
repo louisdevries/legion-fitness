@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/xp_service.dart';
+import '../theme/app_theme.dart';
+import 'app_ui.dart';
 
 // =====================================================================
 // ProfileXpSection — full breakdown for the profile screen
@@ -36,7 +38,8 @@ class _ProfileXpSectionState extends State<ProfileXpSection> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
+    final ink = c.onAccent;
 
     if (_loading) {
       return const Padding(
@@ -48,34 +51,26 @@ class _ProfileXpSectionState extends State<ProfileXpSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Big level display
+        // Big level display — same lime card as the home hero
         Container(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [cs.primary, cs.primary.withValues(alpha: 0.7)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(18),
+            color: c.accent,
+            borderRadius: BorderRadius.circular(22),
           ),
           child: Row(
             children: [
               Container(
-                width: 64,
-                height: 64,
+                width: 60,
+                height: 60,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: cs.onPrimary.withValues(alpha: 0.18),
-                  shape: BoxShape.circle,
+                  color: ink,
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 child: Text(
                   '${_summary.level}',
-                  style: TextStyle(
-                    color: cs.onPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 28,
-                  ),
+                  style: appDisplay(context, 32, color: c.accent),
                 ),
               ),
               const SizedBox(width: 16),
@@ -83,39 +78,36 @@ class _ProfileXpSectionState extends State<ProfileXpSection> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Level ${_summary.level}',
-                      style: TextStyle(
-                        color: cs.onPrimary,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${_summary.totalXp} total XP',
-                      style: TextStyle(
-                        color: cs.onPrimary.withValues(alpha: 0.85),
-                        fontSize: 13,
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text('Level ${_summary.level}',
+                            style: appDisplay(context, 26, color: ink)),
+                        const Spacer(),
+                        Text(
+                          '${_summary.totalXp} XP',
+                          style: TextStyle(
+                            color: ink,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 10),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: _summary.progress,
-                        minHeight: 6,
-                        backgroundColor:
-                        cs.onPrimary.withValues(alpha: 0.2),
-                        valueColor: AlwaysStoppedAnimation(cs.onPrimary),
-                      ),
+                    AppProgressBar(
+                      _summary.progress,
+                      height: 7,
+                      color: ink,
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Text(
-                      '${_summary.xpIntoLevel} / ${_summary.xpForLevel} XP to Level ${_summary.level + 1}',
+                      '${_summary.xpForLevel - _summary.xpIntoLevel} XP to Level ${_summary.level + 1}',
                       style: TextStyle(
-                        color: cs.onPrimary.withValues(alpha: 0.85),
-                        fontSize: 11,
+                        color: ink,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
@@ -125,26 +117,30 @@ class _ProfileXpSectionState extends State<ProfileXpSection> {
           ),
         ),
 
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
 
         // Recent activity
-        const Text(
-          'Recent XP',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        AppCard(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Recent XP', style: appDisplay(context, 22)),
+              const SizedBox(height: 4),
+              if (_recent.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text(
+                    'Complete workouts and goals to start earning XP.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: c.muted),
+                  ),
+                )
+              else
+                ..._recent.take(5).map((e) => _XpEventTile(event: e)),
+            ],
+          ),
         ),
-        const SizedBox(height: 8),
-
-        if (_recent.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Text(
-              'Complete workouts and goals to start earning XP.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: cs.onSurface.withValues(alpha: 0.6)),
-            ),
-          )
-        else
-          ..._recent.map((e) => _XpEventTile(event: e)),
       ],
     );
   }
@@ -156,49 +152,33 @@ class _XpEventTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
+    final color = _colorForSource(event.sourceType, c);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: _colorForSource(event.sourceType, cs)
-                  .withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              _iconForSource(event.sourceType),
-              color: _colorForSource(event.sourceType, cs),
-              size: 18,
-            ),
+          AppIconBadge(
+            _iconForSource(event.sourceType),
+            size: 36,
+            color: color,
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(event.label, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(event.label, style: const TextStyle(fontWeight: FontWeight.w700)),
                 Text(
                   _formatTimeAgo(event.createdAt),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: cs.onSurface.withValues(alpha: 0.5),
-                  ),
+                  style: TextStyle(fontSize: 11, color: c.muted),
                 ),
               ],
             ),
           ),
           Text(
             '+${event.amount}',
-            style: TextStyle(
-              color: cs.primary,
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-            ),
+            style: appDisplay(context, 20, color: c.accentText),
           ),
         ],
       ),
@@ -218,16 +198,12 @@ class _XpEventTile extends StatelessWidget {
     }
   }
 
-  Color _colorForSource(String type, ColorScheme cs) {
+  Color _colorForSource(String type, AppColors c) {
     switch (type) {
-      case 'workout': return cs.primary;
-      case 'steps_daily': return Colors.teal;
-      case 'run':
-      case 'run_5km': return Colors.green;
-      case 'achievement': return Colors.amber;
-      case 'program_complete': return Colors.purple;
-      case 'streak': return Colors.deepOrange;
-      default: return cs.primary;
+      case 'achievement':
+      case 'program_complete': return c.premium;
+      case 'streak': return c.warning;
+      default: return c.accentText;
     }
   }
 

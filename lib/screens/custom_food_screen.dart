@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/food.dart';
 import '../services/food_service.dart';
@@ -74,7 +75,7 @@ class _CustomFoodScreenState extends State<CustomFoodScreen> {
           content: Text(e.code == '23505'
               ? 'You already saved a food for this barcode.'
               : 'Could not save food: ${e.message}'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.danger,
         ),
       );
     }
@@ -107,7 +108,6 @@ class _CustomFoodScreenState extends State<CustomFoodScreen> {
       decoration: InputDecoration(
         labelText: required ? '$label *' : label,
         suffixText: suffix,
-        border: const OutlineInputBorder(),
       ),
       validator: required ? _requiredNumber : _optionalNumber,
     );
@@ -138,7 +138,6 @@ class _CustomFoodScreenState extends State<CustomFoodScreen> {
               textCapitalization: TextCapitalization.sentences,
               decoration: const InputDecoration(
                 labelText: 'Name *',
-                border: OutlineInputBorder(),
               ),
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? 'Required' : null,
@@ -149,7 +148,6 @@ class _CustomFoodScreenState extends State<CustomFoodScreen> {
               textCapitalization: TextCapitalization.words,
               decoration: const InputDecoration(
                 labelText: 'Brand',
-                border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 24),

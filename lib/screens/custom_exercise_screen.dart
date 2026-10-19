@@ -71,7 +71,6 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
               decoration: const InputDecoration(
                 labelText: 'Program name',
                 hintText: 'e.g. Morning Push Day',
-                border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.edit_outlined),
               ),
             ),
@@ -252,7 +251,6 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
                       labelText: "Sets",
-                      border: OutlineInputBorder(),
                     ),
                     onChanged: (v) => state.sets = int.tryParse(v) ?? 1,
                   ),
@@ -263,7 +261,6 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
                     initialValue: state.durationType,
                     decoration: const InputDecoration(
                       labelText: "Unit",
-                      border: OutlineInputBorder(),
                     ),
                     items: const [
                       DropdownMenuItem(value: 'reps', child: Text("Reps")),
@@ -291,7 +288,6 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
                       labelText: "Min",
-                      border: OutlineInputBorder(),
                     ),
                     onChanged: (v) => state.min = int.tryParse(v) ?? 0,
                   ),
@@ -302,7 +298,6 @@ class _CustomExerciseScreenState extends State<CustomExerciseScreen> {
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
                       labelText: "Max",
-                      border: OutlineInputBorder(),
                     ),
                     onChanged: (v) => state.max = int.tryParse(v) ?? 0,
                   ),

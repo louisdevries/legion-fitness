@@ -20,6 +20,12 @@ import '../services/achievement_service.dart';
 import '../services/xp_service.dart';
 import '../services/cardio_day_service.dart';
 import '../utils/user_prefs.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
+
+// Map overlay colours. The map tiles are light, so lines use a dark ink
+// outline to stay visible over parks and roads.
+const _ink = Color(0xFF0E1015);
 
 const String mapboxToken =
     "pk.eyJ1IjoibG91aXNkZXZyaWVzIiwiYSI6ImNtbnlsZ3d1dDAzMXgycXNlcXlyaHJrdmwifQ.bDTfupr74bI5qnK7VCgBHg";
@@ -521,9 +527,6 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
       builder: (ctx) {
         return DraggableScrollableSheet(
           expand: false,
@@ -553,7 +556,8 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                       ),
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red),
+                            backgroundColor: AppColors.of(dctx).warning,
+                            foregroundColor: Colors.white),
                         onPressed: () => Navigator.pop(dctx, true),
                         child: const Text("Delete"),
                       ),
@@ -793,51 +797,60 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
     );
   }
 
+  Widget _banner({
+    required IconData icon,
+    required Color color,
+    required Widget child,
+  }) {
+    final c = AppColors.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: c.card,
+        border: Border(bottom: BorderSide(color: c.cardBorder)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+
   Widget? _buildInfoBanner() {
+    final c = AppColors.of(context);
     if (_isLocked) {
-      return Container(
-        padding: const EdgeInsets.all(8),
-        color: Colors.red.withValues(alpha: 0.15),
-        child: const Row(
-          children: [
-            Icon(Icons.lock, color: Colors.red),
-            SizedBox(width: 8),
-            Text("Screen Locked - tap lock to unlock"),
-          ],
-        ),
+      return _banner(
+        icon: Icons.lock,
+        color: c.warning,
+        child: const Text("Screen locked — tap the lock to unlock"),
       );
     }
     if (_state.isDrawing) {
       final isPan = _panInsteadOfDraw;
-      return Container(
-        padding: const EdgeInsets.all(8),
-        color: (isPan ? Colors.orange : Colors.blue).withValues(alpha: 0.15),
-        child: Row(
-          children: [
-            Icon(
-              isPan ? Icons.pan_tool_alt : Icons.edit,
-              color: isPan ? Colors.orange : Colors.blue,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                isPan
-                    ? "Pan mode — drag to move the map, pinch to zoom"
-                    : "Draw mode — drag to draw your route",
-              ),
-            ),
-          ],
+      return _banner(
+        icon: isPan ? Icons.pan_tool_alt : Icons.edit,
+        color: c.accentText,
+        child: Text(
+          isPan
+              ? "Pan mode — drag to move the map, pinch to zoom"
+              : "Draw mode — drag to draw your route",
         ),
       );
     }
     if (_state.selectedRoute != null && !_state.isRunning) {
       return Container(
-        padding: const EdgeInsets.all(8),
-        color: Colors.purple.withValues(alpha: 0.15),
+        padding: const EdgeInsets.fromLTRB(14, 2, 4, 2),
+        decoration: BoxDecoration(
+          color: c.card,
+          border: Border(bottom: BorderSide(color: c.cardBorder)),
+        ),
         child: Row(
           children: [
-            const Icon(Icons.flag, color: Colors.purple),
-            const SizedBox(width: 8),
+            Icon(Icons.flag, color: c.accentText, size: 20),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 "Attempting: ${_state.selectedRoute!.name} • "
@@ -897,9 +910,9 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                     Polyline(
                       points: _state.selectedRoute!.points,
                       strokeWidth: 6,
-                      color: Colors.purple.withValues(alpha: 0.35),
+                      color: _ink.withValues(alpha: 0.25),
                       borderStrokeWidth: 2,
-                      borderColor: Colors.purple.withValues(alpha: 0.5),
+                      borderColor: _ink.withValues(alpha: 0.45),
                     ),
                   ],
                 ),
@@ -910,8 +923,10 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                   polylines: [
                     Polyline(
                       points: _state.actualRunPath,
-                      strokeWidth: 4,
-                      color: Colors.green,
+                      strokeWidth: 5,
+                      color: AppColors.of(context).accent,
+                      borderStrokeWidth: 2,
+                      borderColor: _ink,
                     ),
                   ],
                 ),
@@ -925,7 +940,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                     Polyline(
                       points: _state.routePoints,
                       strokeWidth: 4,
-                      color: Colors.blue,
+                      color: _ink,
                     ),
                   ],
                 ),
@@ -937,9 +952,9 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                     Polyline(
                       points: _buildPreviewRoute,
                       strokeWidth: 5,
-                      color: Colors.blue.withValues(alpha: 0.85),
+                      color: _ink.withValues(alpha: 0.85),
                       borderStrokeWidth: 2,
-                      borderColor: Colors.white.withValues(alpha: 0.6),
+                      borderColor: AppColors.of(context).accent,
                     ),
                   ],
                 ),
@@ -961,10 +976,10 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                               ? 'B'
                               : '$i',
                           color: i == 0
-                              ? Colors.green
+                              ? AppColors.of(context).accent
                               : i == _buildPins.length - 1
-                              ? Colors.red
-                              : Colors.blue,
+                              ? AppColors.of(context).warning
+                              : _ink,
                           onRemove: () => _removeBuildPin(i),
                         ),
                       ),
@@ -976,9 +991,18 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                 markers: [
                   Marker(
                     point: _state.currentPosition!,
-                    width: 40,
-                    height: 40,
-                    child: const Icon(Icons.my_location, color: Colors.red),
+                    width: 26,
+                    height: 26,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.of(context).accent,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: _ink, width: 4),
+                        boxShadow: const [
+                          BoxShadow(color: Colors.black38, blurRadius: 6),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -994,7 +1018,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
             child: Material(
               elevation: 4,
               shape: const CircleBorder(),
-              color: _panInsteadOfDraw ? Colors.orange : Colors.blue,
+              color: _panInsteadOfDraw ? _ink : AppColors.of(context).accent,
               child: InkWell(
                 customBorder: const CircleBorder(),
                 onTap: _toggleDrawPanMode,
@@ -1004,7 +1028,9 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                   alignment: Alignment.center,
                   child: Icon(
                     _panInsteadOfDraw ? Icons.edit : Icons.pan_tool_alt,
-                    color: Colors.white,
+                    color: _panInsteadOfDraw
+                        ? AppColors.of(context).accent
+                        : _ink,
                   ),
                 ),
               ),
@@ -1015,63 +1041,87 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
   }
 
   Widget _buildStatsBar() {
+    final c = AppColors.of(context);
     return Container(
-      padding: const EdgeInsets.all(16),
-      color: Colors.black,
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: BoxDecoration(
+        color: c.card,
+        border: Border(top: BorderSide(color: c.cardBorder)),
+      ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _stat("Time", _state.formattedTime),
-          _stat("Distance", "${_state.distanceKm.toStringAsFixed(2)} km"),
+          _stat("Distance", _state.distanceKm.toStringAsFixed(2), unit: 'km'),
           _stat("Pace", _state.formattedPace),
         ],
       ),
     );
   }
 
-  Widget _stat(String label, String value) {
-    return Column(
-      children: [
-        Text(label, style: const TextStyle(color: Colors.white70)),
-        const SizedBox(height: 4),
-        Text(value,
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold)),
-      ],
+  Widget _stat(String label, String value, {String? unit}) {
+    final c = AppColors.of(context);
+    return Expanded(
+      child: Column(
+        children: [
+          Text(label.toUpperCase(),
+              style: TextStyle(
+                color: c.muted,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.1,
+              )),
+          const SizedBox(height: 4),
+          Text.rich(
+            TextSpan(children: [
+              TextSpan(text: value),
+              if (unit != null)
+                TextSpan(
+                  text: ' $unit',
+                  style: TextStyle(fontSize: 16, color: c.muted),
+                ),
+            ]),
+            style: appDisplay(context, 30),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildControls() {
+    final c = AppColors.of(context);
+    const tall = Size(0, 54);
+
     if (!_state.isRunning) {
       return Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
             Expanded(
-              child: ElevatedButton(
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(minimumSize: tall),
                 onPressed: _startRun,
-                child: const Text("Start Run"),
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: const Text("Start run"),
               ),
             ),
             if (_state.isDrawing) ...[
               const SizedBox(width: 8),
-              ElevatedButton(
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(minimumSize: tall),
                 onPressed:
                 _state.routePoints.length >= 2 ? _saveDrawnRoute : null,
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
                 child: const Text("Save"),
               ),
               const SizedBox(width: 8),
-              ElevatedButton(
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(minimumSize: tall),
                 onPressed: _clearRoute,
                 child: const Text("Clear"),
               ),
-              const SizedBox(width: 8),
-              ElevatedButton(
+              IconButton(
+                tooltip: "Cancel",
                 onPressed: _cancelDrawing,
-                child: const Text("Cancel"),
+                icon: Icon(Icons.close, color: c.muted),
               ),
             ]
           ],
@@ -1082,16 +1132,29 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          ElevatedButton(
-            onPressed: _pauseRun,
-            child: Text(_state.isPaused ? "Resume" : "Pause"),
+          Expanded(
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(minimumSize: tall),
+              onPressed: _pauseRun,
+              icon: Icon(_state.isPaused
+                  ? Icons.play_arrow_rounded
+                  : Icons.pause_rounded),
+              label: Text(_state.isPaused ? "Resume" : "Pause"),
+            ),
           ),
-          ElevatedButton(
-            onPressed: _stopRun,
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text("Stop"),
+          const SizedBox(width: 12),
+          Expanded(
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                minimumSize: tall,
+                backgroundColor: c.warning,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: _stopRun,
+              icon: const Icon(Icons.stop_rounded),
+              label: const Text("Stop"),
+            ),
           ),
         ],
       ),
@@ -1140,7 +1203,7 @@ class _OutdoorRunScreenState extends State<OutdoorRunScreen> {
                         widthFactor: _unlockProgress,
                         child: Container(
                           decoration: BoxDecoration(
-                            color: Colors.green.withValues(alpha: 0.6),
+                            color: AppColors.of(context).accent,
                             borderRadius: BorderRadius.circular(30),
                           ),
                         ),
@@ -1184,6 +1247,7 @@ class _RoutesSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
@@ -1193,22 +1257,19 @@ class _RoutesSheet extends StatelessWidget {
             height: 4,
             margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
-              color: Colors.grey.shade400,
+              color: c.track,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          const Text(
-            "My Routes",
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
+          Text("My routes", style: appDisplay(context, 28)),
           const SizedBox(height: 12),
           if (routes.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 32),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
               child: Text(
                 "No saved routes yet.\nDraw one with the pencil, or build one by tapping the map.",
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey),
+                style: TextStyle(color: c.muted),
               ),
             )
           else
@@ -1250,15 +1311,19 @@ class _RouteTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     return ListTile(
-      leading: Icon(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+      leading: AppIconBadge(
         Icons.route,
-        color: isSelected ? Colors.purple : Colors.grey,
+        size: 38,
+        color: isSelected ? c.onAccent : c.accentText,
+        background: isSelected ? c.accent : null,
       ),
       title: Text(
         route.name,
         style: TextStyle(
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
         ),
       ),
       subtitle: Row(
@@ -1270,9 +1335,9 @@ class _RouteTile extends StatelessWidget {
               future: RouteService.getBestTimeSecondsForRoute(route.id!),
               builder: (ctx, snap) {
                 if (!snap.hasData || snap.data == null) {
-                  return const Text(
+                  return Text(
                     "No runs yet",
-                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                    style: TextStyle(color: c.muted, fontSize: 12),
                   );
                 }
                 final s = snap.data!;
@@ -1280,8 +1345,7 @@ class _RouteTile extends StatelessWidget {
                 final sec = s % 60;
                 return Row(
                   children: [
-                    const Icon(Icons.emoji_events,
-                        size: 14, color: Colors.amber),
+                    Icon(Icons.emoji_events, size: 14, color: c.premium),
                     const SizedBox(width: 4),
                     Text("${m}m ${sec}s",
                         style: const TextStyle(fontSize: 12)),
@@ -1292,7 +1356,7 @@ class _RouteTile extends StatelessWidget {
         ],
       ),
       trailing: IconButton(
-        icon: const Icon(Icons.delete_outline, color: Colors.red),
+        icon: Icon(Icons.delete_outline, color: c.muted),
         onPressed: onDelete,
       ),
       onTap: onTap,

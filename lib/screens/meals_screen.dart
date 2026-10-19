@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:legion_fitness/main.dart';
 import '../models/food.dart';
@@ -111,7 +113,7 @@ class _MealsScreenState extends State<MealsScreen> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+      SnackBar(content: Text(message), backgroundColor: AppTheme.danger),
     );
   }
 
@@ -304,7 +306,7 @@ class _MealsScreenState extends State<MealsScreen> {
           child: Text(
             _dayLabel,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            style: appDisplay(context, 24),
           ),
         ),
         IconButton(
@@ -339,20 +341,9 @@ class _MealsScreenState extends State<MealsScreen> {
   }
 
   BoxDecoration _cardDecoration(ThemeData theme) => BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(
-              alpha: theme.brightness == Brightness.dark ? 0.28 : 0.10,
-            ),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        color: AppColors.of(context).card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.of(context).cardBorder),
       );
 
   Widget _buildSummaryCard() {
@@ -375,7 +366,7 @@ class _MealsScreenState extends State<MealsScreen> {
                 target == null
                     ? '${grams.round()} g'
                     : '${grams.round()} / $target g',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                style: appDisplay(context, 20),
               ),
               const SizedBox(height: 2),
               Text(label, style: TextStyle(fontSize: 12, color: muted)),
@@ -383,11 +374,7 @@ class _MealsScreenState extends State<MealsScreen> {
                 const SizedBox(height: 6),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: LinearProgressIndicator(
-                    value: (grams / target).clamp(0, 1),
-                    minHeight: 4,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+                  child: AppProgressBar(grams / target, height: 4),
                 ),
               ],
             ],
@@ -411,21 +398,20 @@ class _MealsScreenState extends State<MealsScreen> {
         children: [
           Text(
             '${kcal.round()}',
-            style: TextStyle(
-              fontSize: 36,
-              fontWeight: FontWeight.bold,
+            style: appDisplay(
+              context,
+              52,
               color: targets != null && kcal > targets.kcal
                   ? theme.colorScheme.error
-                  : theme.colorScheme.primary,
+                  : null,
             ),
           ),
           Text(kcalCaption, style: TextStyle(color: muted)),
           if (targets != null) ...[
-            const SizedBox(height: 10),
-            LinearProgressIndicator(
-              value: (kcal / targets.kcal).clamp(0, 1),
-              minHeight: 8,
-              borderRadius: BorderRadius.circular(4),
+            const SizedBox(height: 12),
+            AppProgressBar(
+              kcal / targets.kcal,
+              height: 8,
               color: kcal > targets.kcal ? theme.colorScheme.error : null,
             ),
           ],
@@ -460,13 +446,11 @@ class _MealsScreenState extends State<MealsScreen> {
       child: Column(
         children: [
           ListTile(
-            title: Text(
-              _mealLabels[type]!,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
+            title: Text(_mealLabels[type]!, style: appDisplay(context, 22)),
             subtitle: logs.isEmpty ? null : Text('${kcal.round()} kcal'),
             trailing: IconButton(
-              icon: Icon(Icons.add_circle, color: theme.colorScheme.primary),
+              icon: Icon(Icons.add_circle,
+                  color: AppColors.of(context).accentText, size: 30),
               tooltip: 'Add food',
               onPressed: () => _addFood(type),
             ),
@@ -478,7 +462,7 @@ class _MealsScreenState extends State<MealsScreen> {
               background: Container(
                 alignment: Alignment.centerRight,
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                color: Colors.red,
+                color: AppTheme.danger,
                 child: const Icon(Icons.delete, color: Colors.white),
               ),
               onDismissed: (_) => _deleteLog(log),
@@ -751,7 +735,6 @@ class _AddFoodSheetState extends State<_AddFoodSheet> {
               decoration: const InputDecoration(
                 hintText: 'Search foods',
                 prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 16),
@@ -894,7 +877,6 @@ class _AmountDialogState extends State<_AmountDialog> {
               decoration: const InputDecoration(
                 labelText: 'Amount',
                 suffixText: 'g',
-                border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 8),
@@ -921,7 +903,6 @@ class _AmountDialogState extends State<_AmountDialog> {
               initialValue: _mealType,
               decoration: const InputDecoration(
                 labelText: 'Meal',
-                border: OutlineInputBorder(),
               ),
               items: [
                 for (final type in MealLog.mealTypes)
@@ -932,7 +913,7 @@ class _AmountDialogState extends State<_AmountDialog> {
             const SizedBox(height: 12),
             Text(
               grams == null ? '— kcal' : '${food.kcalFor(grams).round()} kcal',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: appDisplay(context, 28),
             ),
             if (food.isFromOpenFoodFacts || food.isFromUsda) ...[
               const SizedBox(height: 8),
@@ -953,7 +934,7 @@ class _AmountDialogState extends State<_AmountDialog> {
               context,
               _AmountResult(0, _mealType, delete: true),
             ),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
             child: const Text('Delete'),
           ),
         TextButton(

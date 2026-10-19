@@ -11,6 +11,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:legion_fitness/main.dart';
 import '../utils/user_prefs.dart';
 import '../database/app_database.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -95,7 +97,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
             child: const Text('Reset'),
           ),
         ],
@@ -147,7 +149,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
               'Reset returned no rows. Check Supabase RLS policies '
                   'allow DELETE on exercise_completions.',
             ),
-            backgroundColor: Colors.red,
+            backgroundColor: AppTheme.danger,
             duration: Duration(seconds: 6),
           ),
         );
@@ -158,7 +160,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Reset failed: $e'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.danger,
         ),
       );
       return;
@@ -194,8 +196,8 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
         maxChildSize: 0.95,
         builder: (context, scrollController) => Container(
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            color: AppColors.of(context).card,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
           ),
           child: Column(
             children: [
@@ -204,15 +206,15 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey[400],
+                  color: AppColors.of(context).track,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Text(
-                  'Program Exercises',
-                  style: Theme.of(context).textTheme.titleLarge,
+                  'Program exercises',
+                  style: appDisplay(context, 28),
                 ),
               ),
               const Divider(),
@@ -239,32 +241,36 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                         final mediaUrl = exercise['media_url'] as String?;
                         final name = exercise['name'] as String? ?? 'Unknown';
 
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: ListTile(
-                            leading: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: mediaUrl != null && mediaUrl.isNotEmpty
-                                  ? Image.network(
-                                      mediaUrl,
-                                      width: 60,
-                                      height: 60,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, _, _) => Container(
-                                        width: 60,
-                                        height: 60,
-                                        color: Colors.grey[300],
-                                        child: const Icon(Icons.fitness_center),
-                                      ),
-                                    )
-                                  : Container(
-                                      width: 60,
-                                      height: 60,
-                                      color: Colors.grey[300],
-                                      child: const Icon(Icons.fitness_center),
-                                    ),
+                        final placeholder =
+                            const AppIconBadge(Icons.fitness_center, size: 56);
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: AppCard(
+                            padding: const EdgeInsets.all(10),
+                            child: Row(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: mediaUrl != null && mediaUrl.isNotEmpty
+                                      ? Image.network(
+                                          mediaUrl,
+                                          width: 56,
+                                          height: 56,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, _, _) => placeholder,
+                                        )
+                                      : placeholder,
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Text(
+                                    name,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                              ],
                             ),
-                            title: Text(name),
                           ),
                         );
                       },
@@ -379,8 +385,8 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final c = AppColors.of(context);
+    final onSurface = Theme.of(context).colorScheme.onSurface;
 
     if (programInfo == null) {
       return const Scaffold(
@@ -410,9 +416,10 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                     value: 'reset',
                     child: Row(
                       children: [
-                        Icon(Icons.restart_alt, color: Colors.red),
+                        Icon(Icons.restart_alt, color: AppTheme.danger),
                         SizedBox(width: 8),
-                        Text('Reset Program', style: TextStyle(color: Colors.red)),
+                        Text('Reset program',
+                            style: TextStyle(color: AppTheme.danger)),
                       ],
                     ),
                   ),
@@ -427,13 +434,11 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                     Image.network(
                       programInfo!['image_url'],
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stack) => Container(
-                        color: Colors.grey.shade300,
-                        child: const Icon(Icons.image, size: 50),
-                      ),
+                      errorBuilder: (context, error, stack) =>
+                          Container(color: const Color(0xFF181B22)),
                     )
                   else
-                    Container(color: Colors.black),
+                    Container(color: const Color(0xFF181B22)),
 
                   const DecoratedBox(
                     decoration: BoxDecoration(
@@ -454,11 +459,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                       children: [
                         Text(
                           programInfo!['name'],
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: appDisplay(context, 36, color: Colors.white),
                         ),
                         const SizedBox(height: 8),
                         if (programInfo!['description'] != null)
@@ -486,18 +487,29 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                 Row(
                   children: [
                     Expanded(
-                      child: ElevatedButton.icon(
-                        icon: Icon(isActiveProgram
-                            ? Icons.check_circle
-                            : Icons.play_arrow),
-                        label: Text(
-                            isActiveProgram ? 'Program Active' : 'Start Program'),
-                        onPressed:
-                            isActiveProgram ? _deactivateProgram : _activateProgram,
-                      ),
+                      child: isActiveProgram
+                          ? OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(0, 52),
+                                side: BorderSide(color: c.accent, width: 1.4),
+                              ),
+                              icon: Icon(Icons.check_circle,
+                                  color: c.accentText),
+                              label: const Text('Program active'),
+                              onPressed: _deactivateProgram,
+                            )
+                          : FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                  minimumSize: const Size(0, 52)),
+                              icon: const Icon(Icons.play_arrow_rounded),
+                              label: const Text('Start program'),
+                              onPressed: _activateProgram,
+                            ),
                     ),
                     const SizedBox(width: 12),
                     OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 52)),
                       icon: const Icon(Icons.list_alt),
                       label: const Text('Exercises'),
                       onPressed: _showAllExercises,
@@ -505,10 +517,9 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                   ],
                 ),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 28),
 
-                Text("Select Week",
-                    style: theme.textTheme.titleLarge),
+                const AppSectionTitle("Select week"),
 
                 const SizedBox(height: 12),
 
@@ -535,24 +546,45 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                       child: Container(
                         decoration: BoxDecoration(
                           color: locked
-                              ? cs.surfaceContainerHighest
+                              ? c.track
                               : selected
-                              ? cs.primaryContainer
-                              : cs.surface,
-                          borderRadius: BorderRadius.circular(12),
+                              ? c.accent
+                              : c.card,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: selected ? c.accent : c.cardBorder,
+                          ),
                         ),
                         child: Center(
-                          child: Text("Week $week"),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (locked) ...[
+                                Icon(Icons.lock, size: 13, color: c.muted),
+                                const SizedBox(width: 4),
+                              ],
+                              Text(
+                                "Week $week",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: selected
+                                      ? c.onAccent
+                                      : locked
+                                      ? c.muted
+                                      : onSurface,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     );
                   },
                 ),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 28),
 
-                Text("Select Workout",
-                    style: theme.textTheme.titleLarge),
+                const AppSectionTitle("Select workout"),
 
                 const SizedBox(height: 12),
 
@@ -562,27 +594,54 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                   final programDay = _programDayFor(day);
                   final isCardio = programDay?.isCardio == true;
 
+                  final dayTitle = programDay?.title;
                   return Container(
-                    margin: const EdgeInsets.only(bottom: 12),
+                    margin: const EdgeInsets.only(bottom: 10),
                     decoration: BoxDecoration(
-                      color: locked
-                          ? cs.surfaceContainerHighest
-                          : completed
-                          ? cs.secondaryContainer
-                          : cs.surface,
-                      borderRadius: BorderRadius.circular(14),
+                      color: locked ? c.track : c.card,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: completed
+                            ? c.accent.withValues(alpha: 0.6)
+                            : c.cardBorder,
+                      ),
                     ),
                     child: ListTile(
-                      leading: Icon(
-                          isCardio ? Icons.directions_run : Icons.fitness_center),
-                      title: Text(isCardio
-                          ? (programDay?.title ?? 'Cardio Day $day')
-                          : "Workout Day $day"),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 4),
+                      leading: AppIconBadge(
+                        isCardio ? Icons.directions_run : Icons.fitness_center,
+                        color: completed
+                            ? c.onAccent
+                            : locked
+                            ? c.muted
+                            : c.accentText,
+                        background: completed ? c.accent : null,
+                      ),
+                      title: Text(
+                        isCardio
+                            ? (dayTitle ?? 'Cardio Day $day')
+                            : "Day $day${dayTitle != null ? ' — $dayTitle' : ''}",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: locked ? c.muted : null,
+                        ),
+                      ),
+                      subtitle: Text(
+                        completed
+                            ? 'Completed'
+                            : locked
+                            ? 'Locked'
+                            : isCardio
+                            ? 'Cardio'
+                            : 'Strength',
+                      ),
                       trailing: completed
-                          ? const Icon(Icons.check_circle)
+                          ? Icon(Icons.check_circle, color: c.accentText)
                           : locked
-                          ? const Icon(Icons.lock)
-                          : const Icon(Icons.arrow_forward_ios),
+                          ? Icon(Icons.lock, color: c.muted)
+                          : Icon(Icons.arrow_forward_ios,
+                              size: 16, color: c.muted),
                       onTap: locked
                           ? null
                           : () async {
@@ -632,7 +691,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                                 TextButton(
                                   onPressed: () => Navigator.pop(ctx, 'reset'),
                                   child: const Text('Start Fresh',
-                                      style: TextStyle(color: Colors.red)),
+                                      style: TextStyle(color: AppTheme.danger)),
                                 ),
                                 ElevatedButton(
                                   onPressed: () => Navigator.pop(ctx, 'resume'),
@@ -703,7 +762,7 @@ class _WeekDaySelectorScreenState extends State<WeekDaySelectorScreen> {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text("Failed to load workout: $e"),
-                                backgroundColor: Colors.red,
+                                backgroundColor: AppTheme.danger,
                               ),
                             );
                           }

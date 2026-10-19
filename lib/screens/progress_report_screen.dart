@@ -7,6 +7,12 @@ import 'package:flutter/rendering.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'photo_compare_screen.dart';
+import '../theme/app_theme.dart';
+
+// The report is shared as an image, so it keeps one dark look.
+const _reportCard = Color(0xFF181B22);
+const _lime = Color(0xFFC8F135);
+const _ink = Color(0xFF0E1015);
 
 class ProgressReportScreen extends StatefulWidget {
   final List photos;
@@ -71,15 +77,16 @@ class _ProgressReportScreenState
             children: [
               /// 🔥 TRANSFORMATION
               _card(
-                color: Colors.deepPurple,
+                color: _lime,
                 child: Column(
                   children: [
                     const Text(
-                      'Transformation',
+                      'TRANSFORMATION',
                       style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.4,
+                        color: _ink,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -96,8 +103,10 @@ class _ProgressReportScreenState
                         child: Text(
                           '${diff > 0 ? '+' : ''}${diff.toStringAsFixed(1)} kg',
                           style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
+                            fontFamily: AppTheme.displayFont,
+                            fontWeight: FontWeight.w800,
+                            color: _ink,
+                            fontSize: 36,
                           ),
                         ),
                       )
@@ -130,8 +139,10 @@ class _ProgressReportScreenState
                       Text(
                         entry.key,
                         style: const TextStyle(
+                          fontFamily: AppTheme.displayFont,
+                          fontSize: 22,
                           color: Colors.white,
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -147,8 +158,8 @@ class _ProgressReportScreenState
                           padding: const EdgeInsets.only(top: 6),
                           child: Text(
                             'Change: ${monthDiff > 0 ? '+' : ''}${monthDiff.toStringAsFixed(1)} kg',
-                            style:
-                            const TextStyle(color: Colors.white70),
+                            style: const TextStyle(
+                                color: _lime, fontWeight: FontWeight.w700),
                           ),
                         )
 
@@ -235,8 +246,8 @@ class _ProgressReportScreenState
       margin: const EdgeInsets.all(12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color ?? Colors.grey[900],
-        borderRadius: BorderRadius.circular(16),
+        color: color ?? _reportCard,
+        borderRadius: BorderRadius.circular(20),
       ),
       child: child,
     );

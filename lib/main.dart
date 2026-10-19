@@ -276,8 +276,9 @@ class _MainShellState extends State<MainShell> {
     final navBorder = AppColors.of(context).cardBorder;
 
     return Scaffold(
-      // Home draws its own greeting header.
-      appBar: _currentIndex == 0
+      // Home draws its own greeting header; Run has its own app bar with
+      // route/lock actions.
+      appBar: _currentIndex == 0 || _currentIndex == 2
           ? null
           : AppBar(
               title: Text(_titles[_currentIndex]),

@@ -80,6 +80,10 @@ class AppTheme {
   static const _ink = Color(0xFF0E1015);
   static const _olive = Color(0xFF4A6400);
 
+  /// Destructive actions and error snackbars. A constant so it works in
+  /// const widgets; matches the coral used for [AppColors.warning].
+  static const danger = Color(0xFFE5583D);
+
   static const displayFont = 'Barlow Condensed';
   static const bodyFont = 'Manrope';
 
@@ -230,7 +234,219 @@ class AppTheme {
         linearTrackColor: colors.track,
         circularTrackColor: Colors.transparent,
       ),
-      snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+
+      // ── Buttons: lime fill + ink text, like the home "Start" button ──
+      filledButtonTheme: FilledButtonThemeData(style: _accentButton(colors)),
+      elevatedButtonTheme: ElevatedButtonThemeData(style: _accentButton(colors)),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: onBackground,
+          side: BorderSide(color: colors.cardBorder, width: 1.2),
+          minimumSize: const Size(0, 48),
+          shape: _buttonShape,
+          textStyle: const TextStyle(
+            fontFamily: bodyFont,
+            fontWeight: FontWeight.w700,
+            fontSize: 15,
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: colors.accentText,
+          textStyle: const TextStyle(
+            fontFamily: bodyFont,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: colors.accent,
+        foregroundColor: colors.onAccent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
+
+      // ── Inputs ──
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: colors.card,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        labelStyle: TextStyle(color: colors.muted),
+        hintStyle: TextStyle(color: colors.muted),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: colors.cardBorder),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: colors.cardBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: colors.accentText, width: 1.6),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: colors.warning),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: colors.warning, width: 1.6),
+        ),
+      ),
+
+      // ── Surfaces ──
+      dialogTheme: DialogThemeData(
+        backgroundColor: colors.card,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        titleTextStyle: TextStyle(
+          fontFamily: displayFont,
+          fontWeight: FontWeight.w700,
+          fontSize: 24,
+          color: onBackground,
+        ),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: colors.card,
+        surfaceTintColor: Colors.transparent,
+        showDragHandle: false,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: colors.card,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: colors.cardBorder),
+        ),
+      ),
+      listTileTheme: ListTileThemeData(
+        iconColor: colors.muted,
+        subtitleTextStyle: TextStyle(color: colors.muted, fontSize: 13),
+      ),
+
+      // ── Selection controls ──
+      tabBarTheme: TabBarThemeData(
+        labelColor: onBackground,
+        unselectedLabelColor: colors.muted,
+        indicatorColor: colors.accent,
+        indicatorSize: TabBarIndicatorSize.label,
+        dividerColor: colors.cardBorder,
+        labelStyle: const TextStyle(
+          fontFamily: bodyFont,
+          fontWeight: FontWeight.w800,
+          fontSize: 14,
+        ),
+        unselectedLabelStyle: const TextStyle(
+          fontFamily: bodyFont,
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: colors.card,
+        selectedColor: colors.accent,
+        side: BorderSide(color: colors.cardBorder),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        labelStyle: TextStyle(
+          fontFamily: bodyFont,
+          fontWeight: FontWeight.w600,
+          color: onBackground,
+        ),
+        secondaryLabelStyle: TextStyle(
+          fontFamily: bodyFont,
+          fontWeight: FontWeight.w700,
+          color: colors.onAccent,
+        ),
+        checkmarkColor: colors.onAccent,
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          backgroundColor: WidgetStateProperty.resolveWith((s) =>
+              s.contains(WidgetState.selected) ? colors.accent : colors.card),
+          foregroundColor: WidgetStateProperty.resolveWith((s) =>
+              s.contains(WidgetState.selected) ? colors.onAccent : onBackground),
+          side: WidgetStatePropertyAll(BorderSide(color: colors.cardBorder)),
+          textStyle: const WidgetStatePropertyAll(TextStyle(
+            fontFamily: bodyFont,
+            fontWeight: FontWeight.w700,
+          )),
+        ),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((s) =>
+            s.contains(WidgetState.selected) ? colors.onAccent : colors.muted),
+        trackColor: WidgetStateProperty.resolveWith((s) =>
+            s.contains(WidgetState.selected) ? colors.accent : colors.track),
+        trackOutlineColor: WidgetStateProperty.resolveWith((s) =>
+            s.contains(WidgetState.selected) ? colors.accent : colors.cardBorder),
+      ),
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith((s) =>
+            s.contains(WidgetState.selected) ? colors.accent : null),
+        checkColor: WidgetStatePropertyAll(colors.onAccent),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+      ),
+      radioTheme: RadioThemeData(
+        fillColor: WidgetStateProperty.resolveWith((s) =>
+            s.contains(WidgetState.selected) ? colors.accentText : colors.muted),
+      ),
+      sliderTheme: SliderThemeData(
+        activeTrackColor: colors.accent,
+        inactiveTrackColor: colors.track,
+        thumbColor: colors.accent,
+        overlayColor: colors.accent.withValues(alpha: 0.15),
+      ),
+      datePickerTheme: DatePickerThemeData(
+        backgroundColor: colors.card,
+        surfaceTintColor: Colors.transparent,
+        headerHeadlineStyle: const TextStyle(
+          fontFamily: displayFont,
+          fontWeight: FontWeight.w700,
+          fontSize: 30,
+        ),
+        dayBackgroundColor: WidgetStateProperty.resolveWith((s) =>
+            s.contains(WidgetState.selected) ? colors.accent : null),
+        dayForegroundColor: WidgetStateProperty.resolveWith((s) =>
+            s.contains(WidgetState.selected) ? colors.onAccent : null),
+        todayBorder: BorderSide(color: colors.accentText),
+        todayForegroundColor: WidgetStatePropertyAll(colors.accentText),
+        confirmButtonStyle:
+            TextButton.styleFrom(foregroundColor: colors.accentText),
+        cancelButtonStyle:
+            TextButton.styleFrom(foregroundColor: colors.muted),
+      ),
     );
   }
+
+  static final _buttonShape =
+      RoundedRectangleBorder(borderRadius: BorderRadius.circular(14));
+
+  static ButtonStyle _accentButton(AppColors colors) => ButtonStyle(
+        backgroundColor: WidgetStateProperty.resolveWith((s) =>
+            s.contains(WidgetState.disabled) ? colors.track : colors.accent),
+        foregroundColor: WidgetStateProperty.resolveWith((s) =>
+            s.contains(WidgetState.disabled) ? colors.muted : colors.onAccent),
+        overlayColor:
+            WidgetStatePropertyAll(colors.onAccent.withValues(alpha: 0.08)),
+        elevation: const WidgetStatePropertyAll(0),
+        minimumSize: const WidgetStatePropertyAll(Size(0, 48)),
+        padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(horizontal: 20, vertical: 12)),
+        shape: WidgetStatePropertyAll(_buttonShape),
+        textStyle: const WidgetStatePropertyAll(TextStyle(
+          fontFamily: bodyFont,
+          fontWeight: FontWeight.w800,
+          fontSize: 15,
+        )),
+      );
 }

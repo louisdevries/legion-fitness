@@ -18,6 +18,12 @@ import 'package:legion_fitness/models/exercise_set_result.dart';
 import '../services/achievement_service.dart';
 import '../services/xp_service.dart';
 import 'workout_results_screen.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
+
+// Superset accent — light lavender so dark ink text stays readable.
+const _supersetColor = Color(0xFFB9A6FF);
+const _ink = Color(0xFF0E1015);
 
 class ExerciseRunnerScreen extends StatefulWidget {
   final List<Map<String, dynamic>> exercises;
@@ -82,8 +88,9 @@ class NextExercisePreview extends StatelessWidget {
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.of(context).card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.of(context).cardBorder),
       ),
       child: Row(
         children: [
@@ -102,14 +109,17 @@ class NextExercisePreview extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Up Next',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                Text('UP NEXT',
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.2,
+                        color: AppColors.of(context).accentText)),
                 const SizedBox(height: 4),
-                Text(name,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(name, style: appDisplay(context, 22)),
                 const SizedBox(height: 4),
-                Text(quantity, style: const TextStyle(color: Colors.grey)),
+                Text(quantity,
+                    style: TextStyle(color: AppColors.of(context).muted)),
                 if (exercise['tempo'] != null &&
                     (exercise['tempo'] as String).isNotEmpty)
                   Padding(
@@ -252,16 +262,8 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
     }
   }
 
-  Color _getCategoryColor(String category) {
-    switch (category) {
-      case 'warmup':
-        return Colors.orange;
-      case 'cooldown':
-        return Colors.green;
-      default:
-        return Colors.blue;
-    }
-  }
+  Color _getCategoryColor(String category) =>
+      ExerciseCategoryUtils.getColor(category);
 
   // ── Init ─────────────────────────────────────────────────────────
   @override
@@ -363,7 +365,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
         SnackBar(
           content: Row(
             children: [
-              const Icon(Icons.emoji_events, color: Colors.amber),
+              const Icon(Icons.emoji_events, color: Color(0xFFE2B04A)),
               const SizedBox(width: 8),
               Expanded(child: Text('🏆 Unlocked: ${a.label}')),
             ],
@@ -771,7 +773,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Leave',
-                style: TextStyle(color: Colors.red)),
+                style: TextStyle(color: AppTheme.danger)),
           ),
         ],
       ),
@@ -825,12 +827,18 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
                 ? 'Superset'
                 : _getCategoryLabel(_category),
           ),
-          foregroundColor: Colors.white,
-          backgroundColor: _s.isResting
-              ? Colors.green
-              : _isSuperset
-              ? Colors.purple.shade700
-              : _getCategoryColor(_category),
+          // Thin strip in the section colour instead of a coloured bar.
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(4),
+            child: Container(
+              height: 4,
+              color: _s.isResting
+                  ? AppColors.of(context).accent
+                  : _isSuperset
+                  ? _supersetColor
+                  : _getCategoryColor(_category),
+            ),
+          ),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () async {
@@ -871,10 +879,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
               Expanded(
                 child: Text(
                   ExerciseRunnerUtils.getName(_activeExercise),
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: appDisplay(context, 30),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -930,24 +935,24 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text('Set ${_s.currentSet} / $_totalSets',
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+                style: appDisplay(context, 22)),
             if (_isSuperset)
               _Chip(
                 label: _onSupersetPartner ? '2nd exercise' : '1st exercise',
-                bg: Colors.purple.shade100,
-                fg: Colors.purple.shade700,
+                bg: _supersetColor,
+                fg: _ink,
               )
             else if (_isEachSide)
               _Chip(
                 label: _s.onSecondSide ? 'Right side' : 'Left side',
-                bg: Colors.teal.shade100,
-                fg: Colors.teal.shade700,
+                bg: AppColors.of(context).track,
+                fg: Theme.of(context).colorScheme.onSurface,
               )
             else if (_s.usingAlternative)
                 _Chip(
                   label: 'Easier Version',
-                  bg: Colors.orange.shade100,
-                  fg: Colors.orange.shade700,
+                  bg: AppColors.of(context).premium,
+                  fg: _ink,
                 ),
           ],
         ),
@@ -955,11 +960,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
         const SizedBox(height: 8),
         Text(
           ExerciseRunnerUtils.getName(_activeExercise),
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.purple.shade700,
-          ),
+          style: appDisplay(context, 28),
         ),
       ],
       const SizedBox(height: 12),
@@ -1016,9 +1017,9 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
             const SizedBox(height: 10),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    _isSuperset ? Colors.purple.shade700 : null,
-                foregroundColor: _isSuperset ? Colors.white : null,
+                minimumSize: const Size.fromHeight(56),
+                backgroundColor: _isSuperset ? _supersetColor : null,
+                foregroundColor: _isSuperset ? _ink : null,
               ),
               onPressed: () => _completeSet(logSet: true),
               child: Text(_isSuperset && !_onSupersetPartner
@@ -1049,7 +1050,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
                       else
                         const Center(
                           child: Icon(Icons.self_improvement,
-                              size: 64, color: Colors.grey),
+                              size: 64, color: Color(0xFF8B919C)),
                         ),
                     ],
                   )
@@ -1077,10 +1078,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
                         Expanded(
                           child: Text(
                             ExerciseRunnerUtils.getName(_activeExercise),
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: appDisplay(context, 26),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -1098,11 +1096,7 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
                 if (_isSuperset && !_s.isResting) ...[
                   Text(
                     ExerciseRunnerUtils.getName(_activeExercise),
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.purple.shade700,
-                    ),
+                    style: appDisplay(context, 26),
                   ),
                   const SizedBox(height: 8),
                 ],
@@ -1119,27 +1113,26 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('Set ${_s.currentSet} / $_totalSets',
-                          style:
-                              const TextStyle(fontWeight: FontWeight.bold)),
+                          style: appDisplay(context, 22)),
                       if (_isSuperset)
                         _Chip(
                           label: _onSupersetPartner
                               ? '2nd exercise'
                               : '1st exercise',
-                          bg: Colors.purple.shade100,
-                          fg: Colors.purple.shade700,
+                          bg: _supersetColor,
+                          fg: _ink,
                         )
                       else if (_isEachSide)
                         _Chip(
                           label: _s.onSecondSide ? 'Right side' : 'Left side',
-                          bg: Colors.teal.shade100,
-                          fg: Colors.teal.shade700,
+                          bg: AppColors.of(context).track,
+                          fg: Theme.of(context).colorScheme.onSurface,
                         )
                       else if (_s.usingAlternative)
                           _Chip(
                             label: 'Easier Version',
-                            bg: Colors.orange.shade100,
-                            fg: Colors.orange.shade700,
+                            bg: AppColors.of(context).premium,
+                            fg: _ink,
                           ),
                     ],
                   ),
@@ -1184,10 +1177,10 @@ class _ExerciseRunnerScreenState extends State<ExerciseRunnerScreen>
                       ? RestControls(onSkip: _skipRest)
                       : ElevatedButton(
                           style: ElevatedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(52),
                             backgroundColor:
-                                _isSuperset ? Colors.purple.shade700 : null,
-                            foregroundColor:
-                                _isSuperset ? Colors.white : null,
+                                _isSuperset ? _supersetColor : null,
+                            foregroundColor: _isSuperset ? _ink : null,
                           ),
                           onPressed: () => _completeSet(logSet: true),
                           child: Text(_isSuperset && !_onSupersetPartner
@@ -1222,16 +1215,16 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
         label,
         style: TextStyle(
           fontSize: 12,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w800,
           color: fg,
         ),
       ),

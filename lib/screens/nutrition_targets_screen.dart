@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 import '../services/nutrition_targets_service.dart';
 import 'health_profile_screen.dart';
 
@@ -94,7 +95,7 @@ class _NutritionTargetsScreenState extends State<NutritionTargetsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Could not save targets: $e'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.danger,
         ),
       );
     }
@@ -112,7 +113,6 @@ class _NutritionTargetsScreenState extends State<NutritionTargetsScreen> {
       decoration: InputDecoration(
         labelText: required ? '$label *' : label,
         suffixText: suffix,
-        border: const OutlineInputBorder(),
       ),
       validator: (v) {
         if (v == null || v.trim().isEmpty) return required ? 'Required' : null;
@@ -240,7 +240,6 @@ class _NutritionTargetsScreenState extends State<NutritionTargetsScreen> {
           isExpanded: true,
           decoration: const InputDecoration(
             labelText: 'Activity level',
-            border: OutlineInputBorder(),
           ),
           items: [
             for (final a in ActivityLevel.values)

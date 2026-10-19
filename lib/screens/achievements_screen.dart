@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/achievement_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
 
 class AchievementsScreen extends StatefulWidget {
   const AchievementsScreen({super.key});
@@ -118,40 +120,48 @@ class _SummaryHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
+    final ink = c.onAccent;
     final progress = totalCount == 0 ? 0.0 : completedCount / totalCount;
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
+        color: c.accent,
+        borderRadius: BorderRadius.circular(22),
       ),
       child: Row(
         children: [
-          Icon(Icons.emoji_events, color: cs.primary, size: 36),
-          const SizedBox(width: 12),
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: ink,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(Icons.emoji_events, color: c.accent, size: 30),
+          ),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '$completedCount of $totalCount unlocked',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                Text.rich(
+                  TextSpan(children: [
+                    TextSpan(text: '$completedCount'),
+                    TextSpan(
+                      text: ' / $totalCount unlocked',
+                      style: const TextStyle(
+                        fontFamily: AppTheme.bodyFont,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ]),
+                  style: appDisplay(context, 32, color: ink),
                 ),
-                const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 6,
-                    backgroundColor: cs.onSurface.withValues(alpha: 0.08),
-                    valueColor: AlwaysStoppedAnimation(cs.primary),
-                  ),
-                ),
+                const SizedBox(height: 8),
+                AppProgressBar(progress, height: 7, color: ink),
               ],
             ),
           ),
@@ -178,33 +188,16 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: cs.primary),
+          Icon(icon, size: 20, color: c.accentText),
           const SizedBox(width: 8),
-          Text(
-            title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
+          Text(title, style: appDisplay(context, 24)),
           const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: cs.primary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              '$count',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: cs.primary,
-              ),
-            ),
-          ),
+          AppPill('$count', filled: true),
         ],
       ),
     );
@@ -222,38 +215,26 @@ class _AchievementCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     final isCompleted = achievement.status == AchievementStatus.completed;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: cs.surface,
+        color: c.card,
         border: Border.all(
-          color: isCompleted
-              ? cs.primary.withValues(alpha: 0.5)
-              : cs.onSurface.withValues(alpha: 0.08),
-          width: isCompleted ? 1.5 : 1,
+          color: isCompleted ? c.accent.withValues(alpha: 0.6) : c.cardBorder,
         ),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
         children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: (isCompleted ? cs.primary : cs.onSurface)
-                  .withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              _iconFromName(achievement.icon),
-              color: isCompleted
-                  ? cs.primary
-                  : cs.onSurface.withValues(alpha: 0.7),
-            ),
+          AppIconBadge(
+            _iconFromName(achievement.icon),
+            size: 46,
+            color: isCompleted ? c.onAccent : c.accentText,
+            background: isCompleted ? c.accent : null,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -265,7 +246,7 @@ class _AchievementCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         achievement.label,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                        style: const TextStyle(fontWeight: FontWeight.w800),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -275,10 +256,7 @@ class _AchievementCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   achievement.description,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: cs.onSurface.withValues(alpha: 0.7),
-                  ),
+                  style: TextStyle(fontSize: 12, color: c.muted),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -286,26 +264,15 @@ class _AchievementCard extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: achievement.progress,
-                          minHeight: 5,
-                          backgroundColor:
-                          cs.onSurface.withValues(alpha: 0.08),
-                          valueColor: AlwaysStoppedAnimation(
-                            isCompleted ? cs.primary : cs.tertiary,
-                          ),
-                        ),
-                      ),
+                      child: AppProgressBar(achievement.progress, height: 5),
                     ),
                     const SizedBox(width: 8),
                     Text(
                       '${achievement.currentValue} / ${achievement.targetValue}',
                       style: TextStyle(
                         fontSize: 11,
-                        color: cs.onSurface.withValues(alpha: 0.6),
-                        fontWeight: FontWeight.w500,
+                        color: c.muted,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
@@ -342,12 +309,13 @@ class _TierBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     final colors = [
-      Colors.grey,        // 1 Novice
-      Colors.brown,       // 2 Apprentice
-      Colors.blueGrey,    // 3 Adept
-      Colors.orange,      // 4 Master
-      Colors.amber.shade700, // 5 Grandmaster
+      c.muted,                                   // 1 Novice
+      const Color(0xFFB08968),                   // 2 Apprentice (bronze)
+      const Color(0xFF9FB3C8),                   // 3 Adept (silver)
+      c.accentText,                              // 4 Master
+      c.premium,                                 // 5 Grandmaster (gold)
     ];
     final labels = ['I', 'II', 'III', 'IV', 'V'];
     final color = colors[(tier - 1).clamp(0, colors.length - 1)];
@@ -356,14 +324,14 @@ class _TierBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.7)),
       ),
       child: Text(
         label,
         style: TextStyle(
           color: color,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w800,
           fontSize: 11,
         ),
       ),
@@ -388,7 +356,6 @@ class _LockedSectionState extends State<_LockedSection> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -400,31 +367,15 @@ class _LockedSectionState extends State<_LockedSection> {
             child: Row(
               children: [
                 Icon(Icons.lock_outline,
-                    size: 20, color: cs.onSurface.withValues(alpha: 0.7)),
+                    size: 20, color: AppColors.of(context).muted),
                 const SizedBox(width: 8),
-                const Text(
-                  'Locked',
-                  style:
-                  TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
+                Text('Locked', style: appDisplay(context, 24)),
                 const SizedBox(width: 8),
-                Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: cs.onSurface.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '${widget.rows.length}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
+                AppPill('${widget.rows.length}',
+                    color: AppColors.of(context).muted),
                 const Spacer(),
-                Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+                Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                    color: AppColors.of(context).muted),
               ],
             ),
           ),
@@ -445,13 +396,14 @@ class _LockedTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: cs.surface.withValues(alpha: 0.5),
-        border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-        borderRadius: BorderRadius.circular(10),
+        color: c.card.withValues(alpha: 0.6),
+        border: Border.all(color: c.cardBorder),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: [

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
 import '../services/cardio_day_service.dart';
 import 'outdoor_run_screen.dart';
 
@@ -99,8 +101,9 @@ class _CardioDayScreenState extends State<CardioDayScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
+    final ink = c.onAccent;
 
     return Scaffold(
       appBar: AppBar(
@@ -111,80 +114,72 @@ class _CardioDayScreenState extends State<CardioDayScreen> {
           : _day == null
               ? const Center(child: Text('Day not found'))
               : SingleChildScrollView(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Hero card
+                      // Hero card — same lime card as the home screen
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              cs.primary,
-                              cs.primary.withValues(alpha: 0.7)
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(18),
+                          color: c.accent,
+                          borderRadius: BorderRadius.circular(24),
                         ),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.directions_run,
-                                size: 40, color: cs.onPrimary),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _day!.title ?? 'Cardio session',
-                                    style: TextStyle(
-                                      color: cs.onPrimary,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
+                            Row(
+                              children: [
+                                Text(
+                                  'CARDIO DAY',
+                                  style: TextStyle(
+                                    color: ink,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1.4,
+                                  ),
+                                ),
+                                const Spacer(),
+                                if (_isCompleted)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: ink,
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.check,
+                                            color: c.accent, size: 14),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'DONE',
+                                          style: TextStyle(
+                                            color: c.accent,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  if (_day!.minDurationSeconds != null) ...[
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Target: at least ${(_day!.minDurationSeconds! / 60).round()} min',
-                                      style: TextStyle(
-                                        color: cs.onPrimary
-                                            .withValues(alpha: 0.85),
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
+                              ],
                             ),
-                            if (_isCompleted)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: Colors.green.shade600,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.check,
-                                        color: Colors.white, size: 14),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      'DONE',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                            const SizedBox(height: 10),
+                            Text(
+                              _day!.title ?? 'Cardio session',
+                              style: appDisplay(context, 32, color: ink),
+                            ),
+                            if (_day!.minDurationSeconds != null) ...[
+                              const SizedBox(height: 12),
+                              AppPill(
+                                'At least ${(_day!.minDurationSeconds! / 60).round()} min',
+                                icon: Icons.timer_outlined,
+                                color: ink,
                               ),
+                            ],
                           ],
                         ),
                       ),
@@ -229,9 +224,7 @@ class _CardioDayScreenState extends State<CardioDayScreen> {
                               ? 'Already marked complete'
                               : 'Did it outside the app? Mark done',
                           style: TextStyle(
-                            color: _isCompleted
-                                ? cs.onSurface.withValues(alpha: 0.4)
-                                : cs.primary,
+                            color: _isCompleted ? c.muted : c.accentText,
                           ),
                         ),
                       ),

@@ -20,9 +20,9 @@ class CategoryBadge extends StatelessWidget {
         child: Text(
           ExerciseCategoryUtils.getLabel(category),
           style: const TextStyle(
-            color: Colors.white,
+            color: Color(0xFF0E1015),
             fontSize: 12,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w800,
           ),
         ),
       ),

@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../../theme/app_theme.dart';
 
 class ExerciseMedia extends StatelessWidget {
   final String mediaUrl;
@@ -58,17 +59,20 @@ class ExerciseMedia extends StatelessWidget {
   }
 
   Widget _placeholder() {
-    return Container(
-      color: Colors.grey.shade200,
-      child: const Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.fitness_center, size: 64, color: Colors.grey),
-          SizedBox(height: 8),
-          Text('No image available',
-              style: TextStyle(color: Colors.grey, fontSize: 13)),
-        ],
-      ),
-    );
+    return Builder(builder: (context) {
+      final c = AppColors.of(context);
+      return Container(
+        color: c.track,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.fitness_center, size: 64, color: c.muted),
+            const SizedBox(height: 8),
+            Text('No image available',
+                style: TextStyle(color: c.muted, fontSize: 13)),
+          ],
+        ),
+      );
+    });
   }
 }

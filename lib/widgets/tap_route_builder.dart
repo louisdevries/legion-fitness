@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 /// Thin bottom panel shown while the user is in tap-to-build route mode.
 ///
@@ -28,7 +29,7 @@ class TapRouteBuilderPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     final hint = pinCount == 0
         ? 'Tap the map to drop your first pin (Start)'
         : pinCount == 1
@@ -41,8 +42,9 @@ class TapRouteBuilderPanel extends StatelessWidget {
         margin: const EdgeInsets.all(12),
         padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
         decoration: BoxDecoration(
-          color: cs.surface,
-          borderRadius: BorderRadius.circular(16),
+          color: c.card,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: c.cardBorder),
           boxShadow: const [
             BoxShadow(color: Colors.black26, blurRadius: 12, offset: Offset(0, 4)),
           ],
@@ -54,7 +56,7 @@ class TapRouteBuilderPanel extends StatelessWidget {
               children: [
                 Icon(
                   pinCount == 0 ? Icons.touch_app : Icons.route,
-                  color: cs.primary,
+                  color: c.accentText,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -110,7 +112,7 @@ class WaypointPin extends StatelessWidget {
   /// Letter or number to show inside the pin.
   final String label;
 
-  /// First pin (Start) is green, last pin (End) is red, others blue.
+  /// First pin (Start), last pin (End) and middle pins each get a colour.
   final Color color;
 
   final VoidCallback onRemove;
@@ -124,6 +126,12 @@ class WaypointPin extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Light pins (lime) need dark text; dark pins need white text.
+    final textColor =
+        ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+            ? Colors.white
+            : const Color(0xFF0E1015);
+
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.center,
@@ -147,9 +155,9 @@ class WaypointPin extends StatelessWidget {
           alignment: Alignment.center,
           child: Text(
             label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
+            style: TextStyle(
+              color: textColor,
+              fontWeight: FontWeight.w800,
               fontSize: 13,
             ),
           ),
@@ -172,7 +180,7 @@ class WaypointPin extends StatelessWidget {
                 child: Icon(
                   Icons.close,
                   size: 14,
-                  color: Colors.red.shade700,
+                  color: AppTheme.danger,
                 ),
               ),
             ),

@@ -55,7 +55,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 borderRadius: const BorderRadius.all(Radius.circular(4)),
                 backgroundColor: isDark
                     ? Colors.white12
-                    : Colors.deepPurple.shade100,
+                    : const Color(0xFFE6E8E1),
               ),
             ),
           ],

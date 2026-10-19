@@ -14,6 +14,13 @@ import '../services/progress_service.dart';
 import '../services/exercise_service.dart';
 import 'photo_compare_screen.dart';
 import 'package:table_calendar/table_calendar.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
+
+const _monthNames = [
+  'January', 'February', 'March', 'April', 'May', 'June', 'July',
+  'August', 'September', 'October', 'November', 'December',
+];
 
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
@@ -250,8 +257,8 @@ class _ProgressScreenState extends State<ProgressScreen>
               child: const Text('Cancel')),
           TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child:
-              const Text('Delete', style: TextStyle(color: Colors.red))),
+              child: Text('Delete',
+                  style: TextStyle(color: AppColors.of(context).warning))),
         ],
       ),
     );
@@ -294,15 +301,14 @@ class _ProgressScreenState extends State<ProgressScreen>
     }
 
     return Scaffold(
-      appBar: AppBar(
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'Overview'),
-            Tab(text: 'Weight'),
-            Tab(text: 'Photos'),
-          ],
-        ),
+      // The shell already shows the "Progress" title — just the tabs here.
+      appBar: TabBar(
+        controller: _tabController,
+        tabs: const [
+          Tab(text: 'Overview'),
+          Tab(text: 'Weight'),
+          Tab(text: 'Photos'),
+        ],
       ),
       floatingActionButton: _tabController.index == 1
           ? FloatingActionButton(
@@ -341,9 +347,6 @@ class _ProgressScreenState extends State<ProgressScreen>
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (ctx) => SingleChildScrollView(
         padding: EdgeInsets.only(
           left: 24,
@@ -355,10 +358,7 @@ class _ProgressScreenState extends State<ProgressScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Log Weight',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+            Text('Log weight', style: appDisplay(ctx, 28)),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
@@ -366,7 +366,6 @@ class _ProgressScreenState extends State<ProgressScreen>
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(
                 labelText: 'Weight (kg)',
-                border: OutlineInputBorder(),
                 suffixText: 'kg',
               ),
             ),
@@ -409,22 +408,66 @@ class _ProgressScreenState extends State<ProgressScreen>
       return const Center(child: Text('No data yet'));
     }
 
+    final c = AppColors.of(context);
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+
     return SingleChildScrollView(
       child: Column(
         children: [
 
           // 📅 Calendar
-          TableCalendar(
-            focusedDay: selectedDate,
-            firstDay: DateTime(2020),
-            lastDay: DateTime.now(),
-            selectedDayPredicate: (day) =>
-                isSameDay(day, selectedDate),
-            onDaySelected: (selected, focused) {
-              setState(() {
-                selectedDate = selected;
-              });
-            },
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: AppCard(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+              child: TableCalendar(
+                focusedDay: selectedDate,
+                firstDay: DateTime(2020),
+                lastDay: DateTime.now(),
+                startingDayOfWeek: StartingDayOfWeek.monday,
+                availableCalendarFormats: const {CalendarFormat.month: 'Month'},
+                selectedDayPredicate: (day) =>
+                    isSameDay(day, selectedDate),
+                onDaySelected: (selected, focused) {
+                  setState(() {
+                    selectedDate = selected;
+                  });
+                },
+                headerStyle: HeaderStyle(
+                  titleCentered: true,
+                  formatButtonVisible: false,
+                  titleTextStyle: appDisplay(context, 22),
+                  leftChevronIcon: Icon(Icons.chevron_left, color: c.muted),
+                  rightChevronIcon: Icon(Icons.chevron_right, color: c.muted),
+                ),
+                daysOfWeekStyle: DaysOfWeekStyle(
+                  weekdayStyle: TextStyle(color: c.muted, fontSize: 12),
+                  weekendStyle: TextStyle(color: c.muted, fontSize: 12),
+                ),
+                calendarStyle: CalendarStyle(
+                  outsideDaysVisible: false,
+                  defaultTextStyle: TextStyle(color: onSurface),
+                  weekendTextStyle: TextStyle(color: onSurface),
+                  disabledTextStyle: TextStyle(color: c.track),
+                  todayDecoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: c.accent, width: 1.6),
+                  ),
+                  todayTextStyle: TextStyle(
+                    color: onSurface,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  selectedDecoration: BoxDecoration(
+                    color: c.accent,
+                    shape: BoxShape.circle,
+                  ),
+                  selectedTextStyle: TextStyle(
+                    color: c.onAccent,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
           ),
 
           const SizedBox(height: 12),
@@ -465,9 +508,56 @@ class _ProgressScreenState extends State<ProgressScreen>
 
     final latestSpot = spots.last;
 
-    return Padding(
+    final c = AppColors.of(context);
+    final axisStyle = TextStyle(fontSize: 10, color: c.muted);
+    final first = sorted.first;
+    final latest = sorted.last;
+    final change = latest.weight - first.weight;
+
+    return ListView(
       padding: const EdgeInsets.all(16),
-      child: LineChart(
+      children: [
+        // Current weight + change since the first log
+        AppCard(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Current', style: TextStyle(color: c.muted)),
+                    const SizedBox(height: 4),
+                    Text('${latest.weight.toStringAsFixed(1)} kg',
+                        style: appDisplay(context, 38)),
+                  ],
+                ),
+              ),
+              if (sorted.length > 1)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    AppPill(
+                      '${change <= 0 ? '▼' : '▲'} ${change.abs().toStringAsFixed(1)} kg',
+                      filled: true,
+                      color: change <= 0 ? c.accent : c.warning,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'since ${first.date.day}/${first.date.month}/${first.date.year}',
+                      style: TextStyle(color: c.muted, fontSize: 12),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        AppCard(
+          padding: const EdgeInsets.fromLTRB(8, 20, 16, 8),
+          child: SizedBox(
+            height: 300,
+            child: LineChart(
         LineChartData(
           minX: minX,
           maxX: maxX,
@@ -476,6 +566,8 @@ class _ProgressScreenState extends State<ProgressScreen>
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
+            getDrawingHorizontalLine: (_) =>
+                FlLine(color: c.cardBorder, strokeWidth: 1),
           ),
 
           borderData: FlBorderData(show: false),
@@ -499,7 +591,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                   DateTime.fromMillisecondsSinceEpoch(value.toInt());
                   return Text(
                     "${date.day}/${date.month}",
-                    style: const TextStyle(fontSize: 10),
+                    style: axisStyle,
                   );
                 },
               ),
@@ -517,14 +609,11 @@ class _ProgressScreenState extends State<ProgressScreen>
                       mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Text(parts[0],
-                            style: const TextStyle(fontSize: 10)),
-                        const Text('.',
-                            style: TextStyle(fontSize: 10)),
+                        Text(parts[0], style: axisStyle),
+                        Text('.', style: axisStyle),
                         SizedBox(
                           width: 12,
-                          child: Text(parts[1],
-                              style: const TextStyle(fontSize: 10)),
+                          child: Text(parts[1], style: axisStyle),
                         ),
                       ],
                     ),
@@ -537,48 +626,45 @@ class _ProgressScreenState extends State<ProgressScreen>
           // ✅ Touch tooltip
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(
+              getTooltipColor: (_) => c.accent,
               getTooltipItems: (touchedSpots) {
                 return touchedSpots.map((spot) {
                   final date = DateTime.fromMillisecondsSinceEpoch(
                       spot.x.toInt());
                   return LineTooltipItem(
                     "${spot.y.toStringAsFixed(1)} kg\n${date.day}/${date.month}/${date.year}",
-                    const TextStyle(color: Colors.white),
+                    TextStyle(
+                      color: c.onAccent,
+                      fontWeight: FontWeight.w700,
+                    ),
                   );
                 }).toList();
               },
             ),
           ),
 
-          // ✅ THE GOOD STUFF (visual upgrade)
           lineBarsData: [
             LineChartBarData(
               spots: spots,
               isCurved: true,
+              preventCurveOverShooting: true,
               barWidth: 3,
+              color: c.accent,
 
-              // 🔥 Gradient line
-              gradient: const LinearGradient(
-                colors: [
-                  Color(0xFF6C63FF),
-                  Color(0xFF00C9A7),
-                ],
-              ),
-
-              // 🔥 Area fill
+              // Soft lime fill under the line
               belowBarData: BarAreaData(
                 show: true,
                 gradient: LinearGradient(
                   colors: [
-                    const Color(0xFF6C63FF).withValues(alpha: 0.3),
-                    const Color(0xFF00C9A7).withValues(alpha: 0.05),
+                    c.accent.withValues(alpha: 0.28),
+                    c.accent.withValues(alpha: 0.0),
                   ],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                 ),
               ),
 
-              // 🔥 Highlight latest point
+              // Highlight the latest point
               dotData: FlDotData(
                 show: true,
                 getDotPainter: (spot, percent, bar, index) {
@@ -586,14 +672,14 @@ class _ProgressScreenState extends State<ProgressScreen>
                       spot.y == latestSpot.y) {
                     return FlDotCirclePainter(
                       radius: 5,
-                      color: Colors.orange,
-                      strokeWidth: 2,
-                      strokeColor: Colors.white,
+                      color: c.accent,
+                      strokeWidth: 3,
+                      strokeColor: c.card,
                     );
                   }
                   return FlDotCirclePainter(
                     radius: 2,
-                    color: Colors.white,
+                    color: c.muted,
                   );
                 },
               ),
@@ -601,6 +687,9 @@ class _ProgressScreenState extends State<ProgressScreen>
           ],
         ),
       ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -653,8 +742,9 @@ class _ProgressScreenState extends State<ProgressScreen>
                     TextButton(
                       onPressed: () =>
                           setState(() => compareStart = null),
-                      child: const Text('Cancel',
-                          style: TextStyle(color: Colors.redAccent)),
+                      child: Text('Cancel',
+                          style: TextStyle(
+                              color: AppColors.of(context).accent)),
                     ),
                   ],
                 ),
@@ -671,6 +761,8 @@ class _ProgressScreenState extends State<ProgressScreen>
         : null;
     final days = pair[1].date.difference(pair[0].date).inDays;
 
+    final c = AppColors.of(context);
+
     Widget weightDiffBadge() {
       if (diff == null) return const SizedBox.shrink();
       final lost = diff < 0;
@@ -678,39 +770,23 @@ class _ProgressScreenState extends State<ProgressScreen>
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: lost
-                ? [const Color(0xFF43E97B), const Color(0xFF38F9D7)]
-                : [const Color(0xFFFA709A), const Color(0xFFFEE140)],
-          ),
+          color: lost ? c.accent : c.warning,
           borderRadius: BorderRadius.circular(30),
-          boxShadow: [
-            BoxShadow(
-              color: (lost ? Colors.greenAccent : Colors.orangeAccent)
-                  .withValues(alpha: 0.5),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
         ),
         child: Text(
           label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w900,
-            fontSize: 17,
-            shadows: [Shadow(blurRadius: 4, color: Colors.black38)],
-          ),
+          style: appDisplay(context, 20, color: c.onAccent),
         ),
       );
     }
 
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+      padding: const EdgeInsets.fromLTRB(14, 6, 6, 14),
       decoration: BoxDecoration(
-        color: Colors.deepPurple,
-        borderRadius: BorderRadius.circular(16),
+        color: c.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: c.accent.withValues(alpha: 0.5)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -718,24 +794,20 @@ class _ProgressScreenState extends State<ProgressScreen>
           // ── Title row + swipe hint + share ──
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
-                  '🔥 Best Transformation',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
+                  'Best transformation',
+                  style: appDisplay(context, 22),
                 ),
               ),
               // Subtle "swipe up to dismiss" hint
-              const Text(
+              Text(
                 'swipe up to hide',
-                style: TextStyle(color: Colors.white38, fontSize: 11),
+                style: TextStyle(color: c.muted, fontSize: 11),
               ),
               const SizedBox(width: 4),
               IconButton(
-                icon: const Icon(Icons.share, color: Colors.white),
+                icon: Icon(Icons.share, color: c.accentText),
                 onPressed: () => _shareTransformation(pair),
               ),
             ],
@@ -809,8 +881,7 @@ class _ProgressScreenState extends State<ProgressScreen>
               const SizedBox(width: 10),
               Text(
                 'in $days days',
-                style:
-                const TextStyle(color: Colors.white70, fontSize: 13),
+                style: TextStyle(color: c.muted, fontSize: 13),
               ),
             ],
           ),
@@ -828,13 +899,13 @@ class _ProgressScreenState extends State<ProgressScreen>
     }
     final List<Widget> slivers = [];
     for (final entry in grouped.entries) {
+      final first = entry.value.first.date;
       slivers.add(SliverToBoxAdapter(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 16, 12, 6),
+          padding: const EdgeInsets.fromLTRB(12, 18, 12, 8),
           child: Text(
-            entry.key,
-            style: const TextStyle(
-                fontWeight: FontWeight.bold, fontSize: 15),
+            '${_monthNames[first.month - 1]} ${first.year}',
+            style: appDisplay(context, 22),
           ),
         ),
       ));
@@ -910,9 +981,13 @@ class _ProgressScreenState extends State<ProgressScreen>
           if (isSelected)
             Positioned.fill(
               child: Container(
-                color: Colors.blue.withValues(alpha: 0.4),
-                child: const Icon(Icons.compare_arrows,
-                    color: Colors.white, size: 32),
+                decoration: BoxDecoration(
+                  color: AppColors.of(context).accent.withValues(alpha: 0.35),
+                  border: Border.all(
+                      color: AppColors.of(context).accent, width: 3),
+                ),
+                child: Icon(Icons.compare_arrows,
+                    color: AppColors.of(context).onAccent, size: 32),
               ),
             ),
         ],
@@ -972,6 +1047,23 @@ class _ProgressScreenState extends State<ProgressScreen>
       sessionMap.putIfAbsent(key, () => l);
     }
     final sessions = sessionMap.values.toList();
+    final c = AppColors.of(context);
+
+    Widget statRow(IconData icon, String label, String value) => Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: AppCard(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                AppIconBadge(icon),
+                const SizedBox(width: 12),
+                Text(label, style: TextStyle(color: c.muted)),
+                const Spacer(),
+                Text(value, style: appDisplay(context, 26)),
+              ],
+            ),
+          ),
+        );
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -980,92 +1072,70 @@ class _ProgressScreenState extends State<ProgressScreen>
         children: [
           // Date heading
           Text(
-            "${selectedDate.day}/${selectedDate.month}/${selectedDate.year}",
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            "${selectedDate.day} ${_monthNames[selectedDate.month - 1]} ${selectedDate.year}",
+            style: appDisplay(context, 24),
           ),
 
           const SizedBox(height: 12),
 
-          // ✅ Steps card
           if (steps != null)
-            Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF6C63FF), Color(0xFF00C9A7)],
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.directions_walk, color: Colors.white, size: 28),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Steps",
-                        style: TextStyle(color: Colors.white70, fontSize: 12),
-                      ),
-                      Text(
-                        steps.toString(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            statRow(Icons.directions_walk, 'Steps', steps.toString()),
+
+          if (dayWeight.weight != -1)
+            statRow(Icons.monitor_weight_outlined, 'Weight',
+                '${dayWeight.weight.toStringAsFixed(1)} kg'),
 
           // ✅ Program session cards
           if (sessions.isNotEmpty) ...[
-            const Text(
-              "Workout",
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-            ),
+            const SizedBox(height: 6),
+            const AppSectionTitle('Workout', size: 20),
             const SizedBox(height: 8),
             ...sessions.map((session) {
               final program = programMap[session.programId];
               return _buildProgramSessionCard(session, program);
             }),
-            const SizedBox(height: 12),
           ],
-
-          // Weight
-          if (dayWeight.weight != -1)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Text(
-                "⚖️  Weight: ${dayWeight.weight.toStringAsFixed(1)} kg",
-                style: const TextStyle(fontSize: 14),
-              ),
-            ),
 
           // Runs
           if (dayRuns.isEmpty && sessions.isEmpty && steps == null && dayWeight.weight == -1)
-            const Text("No data for this day")
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text("No data for this day",
+                  style: TextStyle(color: c.muted)),
+            )
           else if (dayRuns.isNotEmpty)
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  "Runs",
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                ),
                 const SizedBox(height: 6),
-                ...dayRuns.map((run) => Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.directions_run),
-                    title: Text(
-                        "${(run.distance / 1000).toStringAsFixed(2)} km"),
-                    subtitle: Text(
-                        "Time: ${_formatDuration(run.duration)}\n"
-                            "Pace: ${run.pace?.toStringAsFixed(2) ?? '--'} min/km"),
+                const AppSectionTitle('Runs', size: 20),
+                const SizedBox(height: 8),
+                ...dayRuns.map((run) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: AppCard(
+                    child: Row(
+                      children: [
+                        const AppIconBadge(Icons.directions_run),
+                        const SizedBox(width: 12),
+                        Text(
+                          "${(run.distance / 1000).toStringAsFixed(2)} km",
+                          style: appDisplay(context, 26),
+                        ),
+                        const Spacer(),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(_formatDuration(run.duration),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700)),
+                            Text(
+                              "${run.pace?.toStringAsFixed(2) ?? '--'} min/km",
+                              style: TextStyle(color: c.muted, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 )),
               ],
@@ -1081,8 +1151,8 @@ class _ProgressScreenState extends State<ProgressScreen>
       margin: const EdgeInsets.only(bottom: 10),
       height: 110,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        color: Colors.grey[850],
+        borderRadius: BorderRadius.circular(20),
+        color: const Color(0xFF181B22),
       ),
       clipBehavior: Clip.hardEdge,
       child: Stack(
@@ -1093,7 +1163,7 @@ class _ProgressScreenState extends State<ProgressScreen>
             Image.network(
               program.imageUrl,
               fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => Container(color: Colors.grey[800]),
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
             ),
 
           // Dark overlay so text is readable
@@ -1119,44 +1189,22 @@ class _ProgressScreenState extends State<ProgressScreen>
               children: [
                 Text(
                   program?.name ?? "Program #${session.programId}",
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    shadows: [Shadow(blurRadius: 4, color: Colors.black)],
+                  style: appDisplay(context, 24, color: Colors.white).copyWith(
+                    shadows: const [Shadow(blurRadius: 4, color: Colors.black)],
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 Row(
                   children: [
-                    _sessionBadge("Week ${session.weekNumber}"),
+                    AppPill("Week ${session.weekNumber}", filled: true),
                     const SizedBox(width: 8),
-                    _sessionBadge("Day ${session.dayNumber}"),
+                    AppPill("Day ${session.dayNumber}", filled: true),
                   ],
                 ),
               ],
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _sessionBadge(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white30),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
       ),
     );
   }

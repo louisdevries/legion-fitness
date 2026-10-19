@@ -25,14 +25,15 @@ class ExerciseCategoryUtils {
     }
   }
 
+  /// Badge fill per section. All light enough for dark ink text.
   static Color getColor(String category) {
     switch (category) {
       case 'warmup':
-        return Colors.orange;
+        return const Color(0xFFE8B84E); // amber
       case 'cooldown':
-        return Colors.blue;
+        return const Color(0xFF7FD1C2); // soft teal
       default:
-        return Colors.green;
+        return const Color(0xFFC8F135); // lime
     }
   }
 }

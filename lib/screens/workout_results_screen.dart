@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/xp_service.dart';
 import '../services/achievement_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_ui.dart';
 
 class WorkoutResultsScreen extends StatelessWidget {
   final Duration duration;
@@ -28,7 +30,7 @@ class WorkoutResultsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
 
     return Scaffold(
       body: SafeArea(
@@ -37,79 +39,67 @@ class WorkoutResultsScreen extends StatelessWidget {
             SliverFillRemaining(
               hasScrollBody: false,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
                 child: Column(
                   children: [
                     const Spacer(),
 
                     // ── Header ─────────────────────────────────────
                     Container(
-                      width: 80,
-                      height: 80,
+                      width: 84,
+                      height: 84,
                       decoration: BoxDecoration(
-                        color: Colors.green.shade100,
+                        color: c.accent,
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
                         Icons.check_rounded,
-                        size: 48,
-                        color: Colors.green.shade700,
+                        size: 52,
+                        color: c.onAccent,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Workout Complete',
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    const SizedBox(height: 18),
+                    Text('Workout complete', style: appDisplay(context, 40)),
                     const SizedBox(height: 6),
                     Text(
                       _formatDuration(duration),
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.grey.shade600,
-                      ),
+                      style: TextStyle(fontSize: 17, color: c.muted),
                     ),
 
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 24),
 
                     // ── Stats row ──────────────────────────────────
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        _StatChip(
-                          label: 'Exercises',
-                          value: '${exercises.length}',
-                          icon: Icons.fitness_center,
+                        Expanded(
+                          child: _StatChip(
+                            label: 'Exercises',
+                            value: '${exercises.length}',
+                            icon: Icons.fitness_center,
+                          ),
                         ),
-                        _StatChip(
-                          label: 'Sets',
-                          value: '$totalSetsCompleted',
-                          icon: Icons.repeat,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _StatChip(
+                            label: 'Sets',
+                            value: '$totalSetsCompleted',
+                            icon: Icons.repeat,
+                          ),
                         ),
                       ],
                     ),
 
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 12),
 
                     // ── Exercise list ──────────────────────────────
-                    Container(
-                      decoration: BoxDecoration(
-                        color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
+                    AppCard(
+                      padding: EdgeInsets.zero,
                       child: Column(
                         children: [
                           for (int i = 0; i < exercises.length; i++) ...[
                             if (i > 0)
-                              Divider(
-                                height: 1,
-                                indent: 16,
-                                endIndent: 16,
-                                color: cs.outlineVariant.withValues(alpha: 0.4),
-                              ),
+                              const Divider(
+                                  height: 1, indent: 16, endIndent: 16),
                             _ExerciseRow(exercise: exercises[i]),
                           ],
                         ],
@@ -118,40 +108,36 @@ class WorkoutResultsScreen extends StatelessWidget {
 
                     // ── XP / achievements ──────────────────────────
                     if (xpGrants.isNotEmpty || achievements.isNotEmpty) ...[
-                      const SizedBox(height: 20),
-                      Container(
-                        width: double.infinity,
+                      const SizedBox(height: 12),
+                      AppCard(
+                        borderColor: c.premium.withValues(alpha: 0.5),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.shade50,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.amber.shade200),
-                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             for (final g in xpGrants)
                               Padding(
                                 padding:
-                                    const EdgeInsets.symmetric(vertical: 2),
+                                    const EdgeInsets.symmetric(vertical: 3),
                                 child: Row(
                                   children: [
                                     Icon(Icons.star_rounded,
-                                        color: Colors.amber.shade600,
-                                        size: 18),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      g.isLevelUp
-                                          ? '+${g.amount} XP  ·  Level ${g.newLevel}!'
-                                          : '+${g.amount} XP  ·  ${g.label}',
-                                      style: TextStyle(
-                                        fontWeight: g.isLevelUp
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                        color: g.isLevelUp
-                                            ? Colors.amber.shade800
-                                            : Colors.grey.shade800,
+                                        color: c.premium, size: 18),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        g.isLevelUp
+                                            ? '+${g.amount} XP  ·  Level ${g.newLevel}!'
+                                            : '+${g.amount} XP  ·  ${g.label}',
+                                        style: TextStyle(
+                                          fontWeight: g.isLevelUp
+                                              ? FontWeight.w800
+                                              : FontWeight.w600,
+                                          color: g.isLevelUp
+                                              ? c.premium
+                                              : null,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -160,13 +146,17 @@ class WorkoutResultsScreen extends StatelessWidget {
                             for (final a in achievements)
                               Padding(
                                 padding:
-                                    const EdgeInsets.symmetric(vertical: 2),
+                                    const EdgeInsets.symmetric(vertical: 3),
                                 child: Row(
                                   children: [
-                                    const Icon(Icons.emoji_events,
-                                        color: Colors.amber, size: 18),
-                                    const SizedBox(width: 6),
-                                    Text('Unlocked: ${a.label}'),
+                                    Icon(Icons.emoji_events,
+                                        color: c.premium, size: 18),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text('Unlocked: ${a.label}',
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w600)),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -176,14 +166,15 @@ class WorkoutResultsScreen extends StatelessWidget {
                     ],
 
                     const Spacer(),
+                    const SizedBox(height: 20),
 
                     // ── Done button ────────────────────────────────
                     SizedBox(
                       width: double.infinity,
-                      child: ElevatedButton(
+                      child: FilledButton(
                         onPressed: () => Navigator.pop(context),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(56),
                         ),
                         child: const Text('Done', style: TextStyle(fontSize: 16)),
                       ),
@@ -212,27 +203,19 @@ class _StatChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-      decoration: BoxDecoration(
-        color: cs.primaryContainer.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
+    final c = AppColors.of(context);
+    return AppCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
         children: [
-          Icon(icon, color: cs.primary, size: 22),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Text(
-            label,
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          AppIconBadge(icon),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(value, style: appDisplay(context, 30)),
+              Text(label, style: TextStyle(fontSize: 12, color: c.muted)),
+            ],
           ),
         ],
       ),
@@ -276,12 +259,12 @@ class _ExerciseRow extends StatelessWidget {
           Expanded(
             child: Text(
               name,
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
             ),
           ),
           Text(
             setsLabel,
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+            style: TextStyle(fontSize: 13, color: AppColors.of(context).muted),
           ),
         ],
       ),

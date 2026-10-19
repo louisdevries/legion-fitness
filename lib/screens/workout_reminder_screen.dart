@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -257,6 +258,7 @@ class _WorkoutReminderScreenState
     }
 
     final scheme = Theme.of(context).colorScheme;
+    final c = AppColors.of(context);
     final anyDaySelected = _days.any((d) => d);
 
     return Scaffold(
@@ -288,8 +290,9 @@ class _WorkoutReminderScreenState
               'REPEAT ON',
               style: TextStyle(
                 fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.2,
+                color: c.muted,
               ),
             ),
           ),
@@ -308,14 +311,12 @@ class _WorkoutReminderScreenState
                       ? (v) =>
                       setState(() => _days[i] = v)
                       : null,
-                  selectedColor: scheme.primary,
+                  selectedColor: c.accent,
+                  showCheckmark: false,
                   labelStyle: TextStyle(
-                    color: selected
-                        ? scheme.onPrimary
-                        : null,
-                    fontWeight: selected
-                        ? FontWeight.bold
-                        : null,
+                    color: selected ? c.onAccent : scheme.onSurface,
+                    fontWeight:
+                        selected ? FontWeight.w800 : FontWeight.w600,
                   ),
                 );
               }),
@@ -331,8 +332,9 @@ class _WorkoutReminderScreenState
               'TIME',
               style: TextStyle(
                 fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.2,
+                color: c.muted,
               ),
             ),
           ),
@@ -348,20 +350,15 @@ class _WorkoutReminderScreenState
                 const EdgeInsets.symmetric(
                     horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: _enabled
-                      ? scheme.primaryContainer
-                      : scheme
-                      .surfaceContainerHighest,
+                  color: _enabled ? c.accent : c.track,
                   borderRadius:
                   BorderRadius.circular(20),
                 ),
                 child: Text(
                   _formattedTime,
                   style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: _enabled
-                        ? scheme.onPrimaryContainer
-                        : Colors.grey,
+                    fontWeight: FontWeight.w800,
+                    color: _enabled ? c.onAccent : c.muted,
                   ),
                 ),
               ),
@@ -376,8 +373,9 @@ class _WorkoutReminderScreenState
               'MESSAGE',
               style: TextStyle(
                 fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.2,
+                color: c.muted,
               ),
             ),
           ),
@@ -413,7 +411,7 @@ class _WorkoutReminderScreenState
               const Text('Save reminders'),
               style: FilledButton.styleFrom(
                 minimumSize:
-                const Size.fromHeight(48),
+                const Size.fromHeight(54),
               ),
             ),
           ),
@@ -425,7 +423,7 @@ class _WorkoutReminderScreenState
                 child: Text(
                   'Select at least one day to save',
                   style: TextStyle(
-                      color: Colors.orange,
+                      color: Color(0xFFE2B04A),
                       fontSize: 13),
                 ),
               ),
